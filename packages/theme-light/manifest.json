@@ -1,0 +1,19 @@
+{
+  "manifest_version": 2,
+  "name": "Edge 浅色浏览器主题（主题切换组件）",
+  "version": "0.1.0",
+  "description": "由 Edge 浏览器主题切换控制扩展启用的中性浅色浏览器主题。",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsa1lOvCZTW4xi3lkpdQl//umDPBS7jBWW36UXeDF7HG9WttWjGxGckbqGJNhTaKVtRAyyikHIXxXIJzFkhI9oezgH+U9GC9SRy9XxVlUTUD900H+TvMcgnJdnWcbFNmFsl9bkIk6Wkcx7vj6XeIrIOWgtWU721mnNSRWLwMv5CdGZOUdtBYKjaICFH/WTB/wTbGXLtATVnySwGiS/UExwrBrBQIngZlncGiZLgdWl50wxjDf4zfn4WsNk87RTZsXvR+OiSy5Xei4NAdBjOTq4nm4f7cr9mcX3GXvQjot0YUgisM3DiLKW8hpLHuI28VzprOlrLzymzpwY97OIL88fQIDAQAB",
+  "theme": {
+    "colors": {
+      "frame": [241, 245, 249],
+      "toolbar": [248, 250, 252],
+      "tab_text": [15, 23, 42],
+      "tab_background_text": [30, 41, 59],
+      "bookmark_text": [30, 41, 59],
+      "ntp_background": [255, 255, 255],
+      "ntp_text": [15, 23, 42],
+      "ntp_link": [30, 64, 175]
+    }
+  }
+}

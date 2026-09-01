@@ -1,0 +1,12 @@
+{
+  "name": "edge-browser-theme-toggle",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "test:state": "node --test tests/theme-state.test.mjs",
+    "test:manifests": "node --test tests/manifest-contract.test.mjs",
+    "icons": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate-icons.ps1"
+  }
+}

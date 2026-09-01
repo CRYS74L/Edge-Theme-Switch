@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Edge 浏览器主题切换",
+  "version": "0.1.0",
+  "description": "单击工具栏图标即可在本项目的浅色和深色 Edge 浏览器主题之间切换。",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApiJO/1SneyUezP9SuBEp3zz+pRoN26o1/A27IkfvI36o78XWdUioiB1l6AVMd2eptQRSt3SLxJ7jfWjiP34Qwyuc4ZOs0iLJYiHg+UOvekwtk0q9UAeu8IpgOAAsqHrXpI7SI7BUzkt8DAhif0oyErpF2wTLDSL8fSAcWIX3to5bZBx8Ph2hW5NHwkOuvvbooGR8bHU3gaYWmIy/BzohICgyXI2GbyPUqdFZi2u7pGbW7eiEQvVYTvLoLNdtY8OljmM2PpyGNjrC4LUAkpa3BrgLh7/RNpljRan3PRk7yHQjU8V7fr7tJgVaRxoJEJvh7wdHfb0LVyISY+pyaF8WWQIDAQAB",
+  "permissions": [
+    "management"
+  ],
+  "background": {
+    "service_worker": "src/service-worker.mjs",
+    "type": "module"
+  },
+  "action": {
+    "default_icon": {
+      "16": "icons/icon-light-16.png",
+      "32": "icons/icon-light-32.png",
+      "48": "icons/icon-light-48.png",
+      "128": "icons/icon-light-128.png"
+    }
+  }
+}

@@ -8,6 +8,7 @@ test-output/
 # Packed extensions and signing material are generated locally only
 *.crx
 *.pem
+Cached Theme.pak
 
 # Editor and operating-system files
 .vscode/
