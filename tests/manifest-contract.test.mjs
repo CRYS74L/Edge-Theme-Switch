@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -12,30 +11,12 @@ async function readManifest(relativePath) {
   return JSON.parse(text);
 }
 
-async function findForbiddenThemeFiles(relativeFolder) {
-  const folder = path.join(projectRoot, relativeFolder);
-  const entries = await readdir(folder, { withFileTypes: true });
-  const forbidden = [];
-
-  for (const entry of entries) {
-    if (entry.isFile() && /\.(?:html?|m?js)$/i.test(entry.name)) {
-      forbidden.push(entry.name);
-    }
-  }
-
-  return forbidden;
-}
-
-function extensionIdFromPublicKey(publicKey) {
-  const digest = createHash('sha256').update(Buffer.from(publicKey, 'base64')).digest('hex').slice(0, 32);
-  return [...digest].map((digit) => String.fromCharCode('a'.charCodeAt(0) + Number.parseInt(digit, 16))).join('');
-}
-
-test('控制扩展提供无弹窗 action，并且只请求管理已安装主题所需的权限', async () => {
+test('控制扩展提供无弹窗 action，并且只请求当前网页切换所需的最小权限', async () => {
   const manifest = await readManifest('packages/controller/manifest.json');
 
   assert.equal(manifest.manifest_version, 3);
-  assert.deepEqual(manifest.permissions, ['management']);
+  assert.deepEqual(manifest.permissions, ['activeTab', 'scripting']);
+  assert.equal(manifest.host_permissions, undefined, '不得索取常驻的全站读取权限');
   assert.ok(manifest.action, '控制入口必须是 Edge action');
   assert.equal(manifest.action.default_popup, undefined);
   assert.equal(manifest.options_page, undefined);
@@ -56,28 +37,14 @@ test('控制扩展以事件驱动模块服务工作线程处理工具栏单击',
     48: 'icons/icon-light-48.png',
     128: 'icons/icon-light-128.png',
   });
-  assert.equal(manifest.action.default_title, '单击切换 Edge 浏览器主题');
+  assert.equal(manifest.action.default_title, '单击切换当前网页深浅色');
 });
 
-test('浅色和深色主题均是可在当前扩展平台加载的 MV3 静态 theme 包', async () => {
-  for (const folder of ['packages/theme-light', 'packages/theme-dark']) {
-    const manifest = await readManifest(`${folder}/manifest.json`);
+test('深色样式明确只作用于页面根节点和网页媒体，而非 Windows 或 Edge 配置', async () => {
+  const css = await readFile(path.join(projectRoot, 'packages/controller/src/page-dark.css'), 'utf8');
 
-    assert.equal(manifest.manifest_version, 3);
-    assert.equal(typeof manifest.theme, 'object');
-    assert.equal(manifest.background, undefined);
-    assert.equal(manifest.action, undefined);
-    assert.equal(manifest.browser_action, undefined);
-    assert.deepEqual(await findForbiddenThemeFiles(folder), []);
-  }
-});
-
-test('控制扩展只定位到两个主题包的实际稳定 ID', async () => {
-  const constants = await import('../packages/controller/src/constants.mjs');
-  const lightManifest = await readManifest('packages/theme-light/manifest.json');
-  const darkManifest = await readManifest('packages/theme-dark/manifest.json');
-
-  assert.equal(constants.THEME_IDS.light, extensionIdFromPublicKey(lightManifest.key));
-  assert.equal(constants.THEME_IDS.dark, extensionIdFromPublicKey(darkManifest.key));
-  assert.notEqual(constants.THEME_IDS.light, constants.THEME_IDS.dark);
+  assert.match(css, /data-edge-page-color-mode="dark"/);
+  assert.match(css, /filter:\s*invert\(1\)\s+hue-rotate\(180deg\)/);
+  assert.match(css, /img/);
+  assert.doesNotMatch(css, /registry|Windows|edge:\/\//i);
 });

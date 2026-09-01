@@ -1,8 +1,3 @@
-export const THEME_IDS = Object.freeze({
-  light: 'bnjfdnfniodanacgghheekbjfiambjoo',
-  dark: 'dmaheoepkamplelijejmedigfgmmlgom',
-});
-
 export const ACTION_ICONS = Object.freeze({
   light: Object.freeze({
     16: 'icons/icon-light-16.png',
@@ -19,8 +14,9 @@ export const ACTION_ICONS = Object.freeze({
 });
 
 export const ACTION_TITLES = Object.freeze({
-  light: '当前为浅色模式，单击切换为深色模式',
-  dark: '当前为深色模式，单击切换为浅色模式',
-  setupRequired: '主题组件未完整加载，请重新加载浅色和深色主题包',
-  error: '主题切换失败，请在扩展错误详情中查看原因',
+  light: '当前网页为原色，单击启用深色模式',
+  dark: '当前网页为深色模式，单击恢复原色',
+  noTab: '没有可切换的网页标签页',
+  unsupported: '当前页面不支持切换，请在普通网页中使用',
+  error: '网页色彩切换失败，请在扩展错误详情中查看原因',
 });

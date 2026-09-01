@@ -1,0 +1,16 @@
+:root[data-edge-page-color-mode="dark"] {
+  background: #121212 !important;
+  color-scheme: dark !important;
+  filter: invert(1) hue-rotate(180deg) !important;
+}
+
+:root[data-edge-page-color-mode="dark"] img,
+:root[data-edge-page-color-mode="dark"] picture,
+:root[data-edge-page-color-mode="dark"] video,
+:root[data-edge-page-color-mode="dark"] canvas,
+:root[data-edge-page-color-mode="dark"] svg,
+:root[data-edge-page-color-mode="dark"] iframe,
+:root[data-edge-page-color-mode="dark"] embed,
+:root[data-edge-page-color-mode="dark"] object {
+  filter: invert(1) hue-rotate(180deg) !important;
+}
