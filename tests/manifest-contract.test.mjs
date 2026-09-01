@@ -56,6 +56,7 @@ test('控制扩展以事件驱动模块服务工作线程处理工具栏单击',
     48: 'icons/icon-light-48.png',
     128: 'icons/icon-light-128.png',
   });
+  assert.equal(manifest.action.default_title, '单击切换 Edge 浏览器主题');
 });
 
 test('浅色和深色主题均是可在当前扩展平台加载的 MV3 静态 theme 包', async () => {

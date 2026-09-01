@@ -12,6 +12,7 @@
     "type": "module"
   },
   "action": {
+    "default_title": "单击切换 Edge 浏览器主题",
     "default_icon": {
       "16": "icons/icon-light-16.png",
       "32": "icons/icon-light-32.png",
