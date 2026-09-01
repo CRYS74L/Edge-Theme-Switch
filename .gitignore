@@ -1,0 +1,16 @@
+# JavaScript dependencies and generated verification output
+node_modules/
+coverage/
+.edge-test-profile/
+.artifacts/
+test-output/
+
+# Packed extensions and signing material are generated locally only
+*.crx
+*.pem
+
+# Editor and operating-system files
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
