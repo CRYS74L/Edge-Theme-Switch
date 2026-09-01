@@ -4,6 +4,9 @@ coverage/
 .edge-test-profile/
 .artifacts/
 test-output/
+.native-host/
+**/bin/
+**/obj/
 
 # Packed extensions and signing material are generated locally only
 *.crx

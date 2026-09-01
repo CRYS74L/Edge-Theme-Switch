@@ -11,40 +11,39 @@ async function readManifest(relativePath) {
   return JSON.parse(text);
 }
 
-test('控制扩展提供无弹窗 action，并且只请求当前网页切换所需的最小权限', async () => {
+test('控制扩展只获准访问本机回环桥接，并提供唯一的无弹窗 action', async () => {
   const manifest = await readManifest('packages/controller/manifest.json');
 
   assert.equal(manifest.manifest_version, 3);
-  assert.deepEqual(manifest.permissions, ['activeTab', 'scripting']);
-  assert.equal(manifest.host_permissions, undefined, '不得索取常驻的全站读取权限');
-  assert.ok(manifest.action, '控制入口必须是 Edge action');
+  assert.equal(manifest.name, 'Edge 浏览器外观切换');
+  assert.equal(manifest.permissions, undefined);
+  assert.deepEqual(manifest.host_permissions, ['http://127.0.0.1:42761/*']);
+  assert.equal(manifest.content_scripts, undefined);
   assert.equal(manifest.action.default_popup, undefined);
   assert.equal(manifest.options_page, undefined);
   assert.equal(manifest.options_ui, undefined);
   assert.equal(manifest.side_panel, undefined);
+  assert.equal(manifest.action.default_title, '单击切换 Edge 整体外观');
 });
 
-test('控制扩展以事件驱动模块服务工作线程处理工具栏单击', async () => {
+test('控制扩展使用事件驱动模块 worker，且固定 ID 可供本地桥接精确授权', async () => {
   const manifest = await readManifest('packages/controller/manifest.json');
 
   assert.deepEqual(manifest.background, {
     service_worker: 'src/service-worker.mjs',
     type: 'module',
   });
+  assert.match(manifest.key, /^[A-Za-z0-9+/=]+$/);
   assert.deepEqual(manifest.action.default_icon, {
     16: 'icons/icon-light-16.png',
     32: 'icons/icon-light-32.png',
     48: 'icons/icon-light-48.png',
     128: 'icons/icon-light-128.png',
   });
-  assert.equal(manifest.action.default_title, '单击切换当前网页深浅色');
 });
 
-test('深色样式明确只作用于页面根节点和网页媒体，而非 Windows 或 Edge 配置', async () => {
-  const css = await readFile(path.join(projectRoot, 'packages/controller/src/page-dark.css'), 'utf8');
+test('项目不再保留网页 CSS 注入实现', async () => {
+  const cssPath = path.join(projectRoot, 'packages/controller/src/page-dark.css');
 
-  assert.match(css, /data-edge-page-color-mode="dark"/);
-  assert.match(css, /filter:\s*invert\(1\)\s+hue-rotate\(180deg\)/);
-  assert.match(css, /img/);
-  assert.doesNotMatch(css, /registry|Windows|edge:\/\//i);
+  await assert.rejects(readFile(cssPath, 'utf8'), /ENOENT/);
 });

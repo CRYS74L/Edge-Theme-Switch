@@ -1,52 +1,73 @@
-# Edge 网页深浅色切换
+# Edge 浏览器整体外观一键切换
 
-单击 Edge 工具栏图标，即可在当前普通网页上启用或移除深色视觉模式。没有弹窗、没有设置页，也不需要原先那种三组件安装方式。
+单击已固定在 Edge 工具栏上的扩展图标，即可在当前 Edge 窗口的**浅色**与**深色**整体外观之间往返。切换的是浏览器顶栏、标签栏、地址栏和 Edge 内置页面，不是网页内容的反色模式。
 
-它**绝不修改 Windows 系统主题**，也不写入注册表、不安装原生程序、不改 Edge 配置文件。
+此项目不会修改 Windows 系统主题，也不会结束、重启或另开 Edge 窗口。
 
-## 此版本实际改变的范围
+## 使用体验
 
-此项目先前试过以两个静态 Edge theme 包互相启用来切换浏览器顶部框架配色。实际验证表明，Edge 会在切换后回收未作为当前主题的静态主题包；因此它只会成功一次，之后控制器就再也找不到另一个主题包。这是 Edge/Chromium 的主题生命周期限制，不是主题包没有正确加载。
-
-当前版本删除了这条不可靠路线，改为可重复工作的单扩展方案：
-
-- 单击工具栏图标：当前普通网页切到深色视觉模式。
-- 再次单击：当前普通网页恢复原色。
-- Edge 的标签栏、地址栏和其它浏览器框架颜色不被伪称为已切换。
-- Windows 的浅色/深色模式保持原样。
-- 使用 `activeTab`：只有在你主动单击图标时，扩展才会对当时的网页标签页注入样式；不申请常驻的全网站读取权限。
-
-深色模式以页面根节点的颜色反相为基础，并对常见媒体元素再次反相，以尽量保持图片、视频和画布的原始颜色。网页刷新后会回到网页自身的原色；需要时再单击一次即可。
+- 没有 popup、选项页、侧边栏或网页 CSS 注入。
+- 单击一次工具栏图标即可切换；工具栏悬停标题会显示当前外观和下一次切换方向。
+- 实现会在当前 Edge 内部短暂使用 `edge://settings/appearance` 的稳定 UI Automation 控件，但整个过程由当前窗口截图遮罩覆盖。用户看到的是原页面短暂保持，然后直接出现新的浏览器 chrome；不会露出空白页、临时标签页或设置页。
+- 每次完成后都会恢复原标签数量与原活动页面。
 
 ## 安装到当前 Edge
 
-1. 在当前 Edge 中打开 `edge://extensions`，并打开“开发人员模式”。
-2. 如果之前加载过旧版的 `theme-light`、`theme-dark` 或“Edge 浏览器主题切换”，请在该页移除它们，避免旧静态主题继续留在列表里。
-3. 选择“加载解压缩的扩展”，只选择：
+在项目根目录执行一次本机桥接安装：
+
+```powershell
+Set-Location -LiteralPath 'D:\【主文件夹】\下载\【Codex 工作空间】\Edge 颜色主题切换插件'
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-native-host.ps1
+```
+
+脚本会将桥接程序发布到：
+
+`%LOCALAPPDATA%\CRYS74L\EdgeBrowserThemeToggle\NativeHost`
+
+并创建唯一的当前用户登录启动项：
+
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\CRYS74L.EdgeBrowserThemeToggle`
+
+该后台助手只监听 `127.0.0.1:42761`，不监听局域网地址；它只负责接收此扩展的本机切换请求。
+
+接着在**当前已经打开的 Edge** 中：
+
+1. 打开 `edge://extensions`，启用“开发人员模式”。
+2. 移除旧的 `theme-light`、`theme-dark`、网页深浅色切换扩展，避免旧方案干扰。
+3. 选择“加载解压缩的扩展”，目录选择：
 
    `D:\【主文件夹】\下载\【Codex 工作空间】\Edge 颜色主题切换插件\packages\controller`
 
-4. 在扩展菜单中将“Edge 网页深浅色切换”固定到工具栏。
-5. 打开一个普通 `http://` 或 `https://` 网页，单击图标即可切换；图标和悬停提示会显示当前页面状态。
+4. 将“Edge 浏览器外观切换”固定到工具栏。
+5. 单击该图标即可在浅色和深色 Edge 整体外观之间切换。
 
-`edge://extensions`、新标签页和其它 Edge 内部页面不允许扩展注入内容。若在这些页面单击，扩展会显示“当前页面不支持切换，请在普通网页中使用”，且不会改变任何状态。
+## 卸载与恢复
+
+先移除 Edge 中加载的控制扩展，再执行：
+
+```powershell
+Set-Location -LiteralPath 'D:\【主文件夹】\下载\【Codex 工作空间】\Edge 颜色主题切换插件'
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-native-host.ps1 -Uninstall
+```
+
+卸载会停止本项目的本机桥接、删除上述精确 Run 值和本项目生成的运行文件，并清理旧 Native Messaging 注册项；不会修改 Windows 主题、Edge Preferences、策略或其他扩展。
 
 ## 项目结构
 
 | 路径 | 作用 |
 | --- | --- |
-| `packages/controller` | 唯一需要加载的 MV3 扩展；工具栏 action 和页面样式。 |
-| `packages/controller/src/page-dark.css` | 当前网页的可移除深色视觉样式。 |
-| `tests` | action、内部页防护、清单权限和图标资源验证。 |
+| `packages/controller` | 唯一需要加载到 Edge 的 MV3 工具栏 action。 |
+| `packages/native-host` | 只绑定本机回环地址的 .NET 7 桥接与 Edge UI Automation。 |
+| `scripts/install-native-host.ps1` | 可逆安装、启动和卸载本机桥接。 |
+| `tests` | MV3 请求、回环协议、Native host 和清单契约测试。 |
 
 ## 验证
 
 ```powershell
 npm test
+dotnet build .\packages\native-host\EdgeBrowserThemeToggle.NativeHost.csproj --nologo
+dotnet run --project .\tests\native-host-contract\NativeHostContract.csproj --nologo
+dotnet run --project .\tests\loopback-bridge-contract\LoopbackBridgeContract.csproj --nologo
 ```
 
-测试覆盖单击切换、再次恢复、Edge 内部页拒绝、最小权限、CSS 作用范围和图标资源。
-
-## 卸载与恢复
-
-在 `edge://extensions` 中移除“Edge 网页深浅色切换”。扩展没有创建系统级文件或设置；刷新已切换的网页也会恢复该网页原本的配色。
+当前版本已在现有 Edge 窗口上真实验证两次连续单击：浅→深、深→浅均保留 6 个原有标签，且 Windows 系统主题未变。

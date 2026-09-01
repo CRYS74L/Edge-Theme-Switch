@@ -1,60 +1,50 @@
-# Edge 浏览器浅色/深色主题一键切换设计
+# Edge 浏览器整体外观一键切换设计
 
 ## 目标
 
-在 Microsoft Edge 139（Windows）中交付一个可固定到工具栏的单击入口：不弹出页面、不打开设置页，单击后立即让 Edge 自身的顶栏、标签栏和工具栏在浅色与深色外观之间切换。
+在当前 Windows 上已打开的 Microsoft Edge 中，单击一个固定到工具栏的扩展图标，在 Edge 自身的“浅色”和“深色”整体外观之间往返。验收对象是浏览器顶栏、标签栏、地址栏和内置页面；网页内容和 Windows 系统主题不属于切换对象。
 
-用户已在当前任务中明确授权从零开发、调试、安装和连续验证；这份设计据此进入实施，不额外等待审批。
+## 已验证事实
 
-## 已验证的边界
-
-标准 Manifest V3 扩展没有公开 API 可以直接改写 Edge“整体外观”设置。Chromium 将 `theme` 清单键限制为 `theme` 类型包，主题包本身不能包含 JavaScript 或 HTML。因此本项目不尝试写 Edge 的私有 Preferences、不使用私有 `settingsPrivate` API，也不修改 Windows 的全局应用主题。
-
-Chromium 的公开 `chrome.management` API 可识别并启用已安装的主题项。本设计将该公开能力用于两个受本项目控制的静态主题包；启用一个主题时，浏览器会应用其颜色并替换当前主题。
+- MV3 的公开 API 不能直接写入 Edge 的“整体外观”。
+- 静态 theme 包不能可靠往返：Chromium 会回收非当前主题包；网页 CSS 注入则只能改变网页内容，都不能满足目标。
+- 当前 Edge 的 `edge://settings/appearance` 暴露稳定 UI Automation 标识：`appearance-mode-radio-group`、`light`、`dark`。
+- 选中 `dark` 或 `light` 会立即改变 Edge browser chrome，且不会改变 Windows 主题。
+- Edge 139 当前环境无法可靠动态加载 `chrome.action.setIcon()` 的扩展文件；控制扩展只更新 action 标题，不让图标加载异常掩盖已确认的切换结果。
 
 ## 架构
 
-项目由三个本地包组成：
+1. `packages/controller` 是唯一需要在 Edge 中加载和固定的 MV3 扩展。action 向 `http://127.0.0.1:42761/toggle` 发送受本机桥接令牌保护的 `toggle` 请求。
+2. `packages/native-host` 是用户级常驻的 .NET 7 回环桥接。它只绑定 `127.0.0.1`，由安装脚本隐式启动并通过唯一 Run 项在登录后恢复；不创建 Windows 服务、计划任务或 Edge 政策。
+3. bridge 只查找当前前台 Edge 窗口；若没有 Edge 或检测到多个候选窗口，则明确失败，绝不启动新 Edge 或猜测目标。
+4. bridge 用 UI Automation 在目标 Edge 内短暂创建 `edge://settings/appearance` 标签，读取当前 `dark` 状态并选择相反的 `light`/`dark` 控件，然后关闭临时标签。
+5. 在临时导航前，bridge 截取目标 Edge 窗口，创建所属当前 Edge 的顶级遮罩窗。遮罩保持在 Edge 之上，直到临时标签已关闭、原活动页已恢复且浏览器 compositor 已稳定；因此内部设置页不会暴露给用户。
+6. 遮罩按目标 Edge 窗口 DPI 换算坐标，避免 125% 等显示缩放下出现右侧或底部漏画。
 
-1. `packages/controller`：Manifest V3 控制扩展，唯一带有 `action` 工具栏图标的包。它使用 `management` 权限查找两个内置主题的稳定 ID，并在 `chrome.action.onClicked` 时启用目标主题。
-2. `packages/theme-light`：无 JavaScript、无 HTML、无工具栏入口的 Manifest V2 静态浅色主题。
-3. `packages/theme-dark`：无 JavaScript、无 HTML、无工具栏入口的 Manifest V2 静态深色主题。
+## 本机集成边界
 
-三个包都在清单中携带固定公钥，因此解包加载和之后打包时的扩展 ID 可重复。控制扩展仅对这两个确定 ID 执行操作；不会枚举并改动普通扩展，也不会安装、禁用或删除第三方插件。
+安装脚本只管理以下精确目标：
 
-控制逻辑只有一个状态转换：已启用深色主题时切到浅色主题；其余情况（浅色、默认主题或第三方主题）切到深色主题。浏览器负责在启用新主题时取消当前主题。管理事件会刷新 action 图标与标题：太阳图标表示当前浅色，月亮图标表示当前深色；标题始终说明下一次单击会切换到哪一侧。
+- 运行文件：`%LOCALAPPDATA%\CRYS74L\EdgeBrowserThemeToggle\NativeHost`
+- 启动项：`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\CRYS74L.EdgeBrowserThemeToggle`
+- 仅为兼容旧版本而清理的 Native Messaging 项：
+  - `HKCU\Software\Microsoft\Edge\NativeMessagingHosts\com.crys74l.edge_browser_theme_toggle`
+  - `HKCU\Software\Microsoft\Edge\NativeMessagingHosts\com.crys74l.edgethemetoggle`
 
-## 安装与入口
+卸载只停止本项目的回环 bridge、移除上述精确启动项和脚本生成文件；不修改 Windows 主题、Edge Preferences、策略或第三方扩展。
 
-初次安装会通过 Edge 的开发者扩展界面加载三个明确目录。只有控制扩展会被固定到 Edge 工具栏，两个主题包不会显示入口。项目提供可重复的安装核验脚本与卸载说明，但不创建 Native Messaging 注册项、策略项、开机项或常驻进程。
+## 交互约束
 
-首次未应用本项目主题时，控制扩展显示“切换为深色模式”；第一次单击会应用深色主题。之后每次单击都在本项目的浅色和深色主题间往返。
+- 无 popup、选项页、侧边栏、内容脚本、网页 CSS 注入、静态 theme 包或 Edge Preferences 写入。
+- “系统”不是目标状态：首次点击从系统/浅色切到深色，之后在显式浅色与深色之间往返。
+- 成功后 action 标题反映已确认的 Edge 外观和下一次切换方向；失败时不谎称成功。
+- 不结束、重启或另开 Edge 窗口。
+- 切换期间原窗口画面会短暂冻结，避免暴露内部临时页面；完成后直接显示新 chrome。
 
-## 视觉与交互约束
+## 验证标准
 
-- 工具栏操作不包含 popup、选项页、侧边栏或通知。
-- 主题色使用接近 Edge 默认浅色/深色的中性灰蓝调，保持标签文字、工具栏文字和图标的可读对比度。
-- 控制图标为简洁线性太阳/月亮图标，提供 16、32、48、128 像素 PNG 资源。
-- 本项目只改变 Edge 的浏览器 chrome 颜色；网页内容和 Windows 外观不被修改。
-
-## 测试策略
-
-先用 Node 内置测试器验证控制状态机、清单限制和资源完整性。每个行为测试必须先因缺少实现而失败，再写最小实现使其通过。
-
-随后在隔离的 Edge 用户数据目录中加载三个包，真实单击工具栏 action，捕获点击前后的浏览器截图，并同时读取 `chrome.management` 的主题启用状态。验收必须同时证明：
-
-- action 没有 popup；
-- 首次点击启用深色主题；
-- 第二次点击启用浅色主题；
-- 工具栏像素颜色确有切换；
-- 控制图标与标题随当前主题更新；
-- 用户实际 Edge 配置中三个包都已加载且控制入口可见。
-
-如果 Edge 139 拒绝控制扩展启用已安装主题，将记录该真实错误并切换到下一条经过验证的替代方案；不会把未验证的 Native Messaging 或 Windows 主题写入当作完成。
-
-## 文件与运行时约束
-
-- 运行时为 Windows + Microsoft Edge 139.0.3405.111。
-- 不引入网络服务、云端代码、第三方 npm 运行时依赖或本地常驻程序。
-- 自动化临时用户数据目录仅创建在系统临时目录的随机 GUID 子目录中，验证后仅删除本次创建的该目录。
-- 所有项目文件仅写入当前工作区；不会删除项目根目录或用户现有文件。
+1. 静态测试：manifest 没有 `scripting`、`activeTab`、内容脚本或网页 CSS；只允许回环 bridge host permission。
+2. bridge 测试：请求令牌、HTTP 协议、错误路径和开关响应可重复验证。
+3. Native host 测试：协议长度帧、请求校验、深色/浅色决定逻辑和异常结果可重复验证。
+4. 构建测试：.NET host 与 Node 测试均通过。
+5. 真实当前 Edge 验收：工具栏 action 连续两次触发，浅→深、深→浅均改变 browser chrome，标签数不变，过渡期间不显示空白页、临时标签或设置页，Windows 主题保持不变。

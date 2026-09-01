@@ -1,9 +1,19 @@
 import {
-  ACTION_ICONS,
   ACTION_TITLES,
+  LOCAL_BRIDGE_TOKEN,
+  LOCAL_BRIDGE_TOGGLE_URL,
+  NATIVE_PROTOCOL_VERSION,
 } from './constants.mjs';
 
 let operationTail = Promise.resolve();
+
+class NativeBridgeResponseError extends Error {
+  constructor(response) {
+    super(response?.message || response?.errorCode || 'The native bridge returned no supported result.');
+    this.name = 'NativeBridgeResponseError';
+    this.code = response?.errorCode || 'native-bridge-response';
+  }
+}
 
 function enqueue(operation) {
   const result = operationTail.then(operation, operation);
@@ -11,140 +21,55 @@ function enqueue(operation) {
   return result;
 }
 
-function recordDiagnostic(stage, error) {
-  globalThis.__edgeThemeToggleDiagnostics = {
-    stage,
-    at: new Date().toISOString(),
-    error: error
-      ? {
-        name: error.name,
-        message: error.message,
-        stack: error.stack,
-      }
-      : null,
-  };
+async function sendLocalToggleRequest() {
+  const response = await fetch(LOCAL_BRIDGE_TOGGLE_URL, {
+    method: 'POST',
+    cache: 'no-store',
+    headers: {
+      'content-type': 'application/json',
+      'x-edge-browser-theme-toggle': LOCAL_BRIDGE_TOKEN,
+    },
+    body: JSON.stringify({ command: 'toggle', protocolVersion: NATIVE_PROTOCOL_VERSION }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Local bridge returned HTTP ${response.status}.`);
+  }
+
+  return response.json();
 }
 
-async function setActionPresentation(tabId, mode) {
-  await Promise.all([
-    chrome.action.setIcon({ tabId, path: ACTION_ICONS[mode] }),
-    chrome.action.setTitle({ tabId, title: ACTION_TITLES[mode] }),
-  ]);
+function isSupportedMode(mode) {
+  return mode === 'light' || mode === 'dark';
 }
 
-function toggleDocumentColorModeMarker() {
-  const root = document.documentElement;
-  if (!root) {
-    throw new Error('The page does not expose a document element.');
-  }
-
-  const attribute = 'data-edge-page-color-mode';
-  if (root.getAttribute(attribute) === 'dark') {
-    root.removeAttribute(attribute);
-    return 'light';
-  }
-
-  root.setAttribute(attribute, 'dark');
-  return 'dark';
+async function setActionPresentation(mode) {
+  await chrome.action.setTitle({ title: ACTION_TITLES[mode] });
 }
 
-function setDocumentColorModeMarker(mode) {
-  const root = document.documentElement;
-  if (!root) {
-    return;
-  }
-
-  const attribute = 'data-edge-page-color-mode';
-  if (mode === 'dark') {
-    root.setAttribute(attribute, 'dark');
-  }
-  else {
-    root.removeAttribute(attribute);
-  }
-}
-
-async function restoreDocumentColorModeMarker(tabId, mode) {
-  try {
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      func: setDocumentColorModeMarker,
-      args: [mode],
-    });
-  }
-  catch (rollbackError) {
-    recordDiagnostic('rollback-page-marker', rollbackError);
-  }
-}
-
-function isUnsupportedPageError(error) {
+async function setActionFailure(error) {
   const message = String(error?.message ?? '');
-  return /Cannot access contents of url|Cannot access a chrome:|Missing host permission/i.test(message);
+  const title = /failed to fetch|networkerror|local bridge returned http/i.test(message)
+    ? ACTION_TITLES.bridgeUnavailable
+    : ACTION_TITLES.failed;
+  await chrome.action.setTitle({ title });
 }
 
-async function performPageModeSwitch(tab) {
-  if (!Number.isInteger(tab?.id)) {
-    await chrome.action.setTitle({ title: ACTION_TITLES.noTab });
-    return;
-  }
+async function performToggle() {
+  await chrome.action.setTitle({ title: ACTION_TITLES.busy });
 
-  const tabId = tab.id;
   try {
-    const results = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: toggleDocumentColorModeMarker,
-    });
-    const mode = results[0]?.result;
-    if (mode !== 'dark' && mode !== 'light') {
-      throw new Error('The page color-mode injection returned no supported mode.');
+    const response = await sendLocalToggleRequest();
+    if (!response?.ok || !isSupportedMode(response.mode)) {
+      throw new NativeBridgeResponseError(response);
     }
 
-    try {
-      if (mode === 'dark') {
-        await chrome.scripting.insertCSS({
-          target: { tabId },
-          files: ['src/page-dark.css'],
-          origin: 'USER',
-        });
-      }
-      else {
-        await chrome.scripting.removeCSS({
-          target: { tabId },
-          files: ['src/page-dark.css'],
-          origin: 'USER',
-        });
-      }
-    }
-    catch (styleError) {
-      await restoreDocumentColorModeMarker(tabId, mode === 'dark' ? 'light' : 'dark');
-      throw styleError;
-    }
-
-    await setActionPresentation(tabId, mode);
+    await setActionPresentation(response.mode);
   }
   catch (error) {
-    recordDiagnostic('switch-page-mode', error);
-    console.error('网页深浅色切换失败。', error);
-    await chrome.action.setTitle({
-      tabId,
-      title: isUnsupportedPageError(error) ? ACTION_TITLES.unsupported : ACTION_TITLES.error,
-    });
+    console.error('Edge 整体外观切换失败。', error);
+    await setActionFailure(error);
   }
 }
 
-function switchPageMode(tab) {
-  return enqueue(() => performPageModeSwitch(tab));
-}
-
-function resetActionOnNavigation(tabId, changeInfo) {
-  if (changeInfo.status !== 'loading') {
-    return undefined;
-  }
-
-  return enqueue(() => setActionPresentation(tabId, 'light')).catch((error) => {
-    recordDiagnostic('reset-action-on-navigation', error);
-    console.error('网页导航后重置工具栏状态失败。', error);
-  });
-}
-
-chrome.action.onClicked.addListener(switchPageMode);
-chrome.tabs.onUpdated.addListener(resetActionOnNavigation);
+chrome.action.onClicked.addListener(() => enqueue(performToggle));

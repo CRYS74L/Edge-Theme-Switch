@@ -1,22 +1,12 @@
-export const ACTION_ICONS = Object.freeze({
-  light: Object.freeze({
-    16: 'icons/icon-light-16.png',
-    32: 'icons/icon-light-32.png',
-    48: 'icons/icon-light-48.png',
-    128: 'icons/icon-light-128.png',
-  }),
-  dark: Object.freeze({
-    16: 'icons/icon-dark-16.png',
-    32: 'icons/icon-dark-32.png',
-    48: 'icons/icon-dark-48.png',
-    128: 'icons/icon-dark-128.png',
-  }),
-});
+export const NATIVE_PROTOCOL_VERSION = 1;
+export const LOCAL_BRIDGE_TOGGLE_URL = 'http://127.0.0.1:42761/toggle';
+export const LOCAL_BRIDGE_TOKEN = 'REDACTED_LOCAL_BRIDGE_TOKEN';
 
 export const ACTION_TITLES = Object.freeze({
-  light: '当前网页为原色，单击启用深色模式',
-  dark: '当前网页为深色模式，单击恢复原色',
-  noTab: '没有可切换的网页标签页',
-  unsupported: '当前页面不支持切换，请在普通网页中使用',
-  error: '网页色彩切换失败，请在扩展错误详情中查看原因',
+  initial: '单击切换 Edge 整体外观',
+  busy: '正在切换 Edge 整体外观…',
+  light: 'Edge 当前为浅色，单击切换为深色',
+  dark: 'Edge 当前为深色，单击切换为浅色',
+  bridgeUnavailable: '本地桥接未运行：运行 scripts/install-native-host.ps1',
+  failed: '未更改 Edge 外观：请查看扩展错误详情',
 });
