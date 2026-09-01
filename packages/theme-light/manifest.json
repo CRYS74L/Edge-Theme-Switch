@@ -1,5 +1,5 @@
 {
-  "manifest_version": 2,
+  "manifest_version": 3,
   "name": "Edge 浅色浏览器主题（主题切换组件）",
   "version": "0.1.0",
   "description": "由 Edge 浏览器主题切换控制扩展启用的中性浅色浏览器主题。",

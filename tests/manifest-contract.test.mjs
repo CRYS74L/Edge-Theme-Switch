@@ -58,11 +58,11 @@ test('控制扩展以事件驱动模块服务工作线程处理工具栏单击',
   });
 });
 
-test('浅色和深色主题均是无脚本、无工具栏入口的静态 theme 包', async () => {
+test('浅色和深色主题均是可在当前扩展平台加载的 MV3 静态 theme 包', async () => {
   for (const folder of ['packages/theme-light', 'packages/theme-dark']) {
     const manifest = await readManifest(`${folder}/manifest.json`);
 
-    assert.equal(manifest.manifest_version, 2);
+    assert.equal(manifest.manifest_version, 3);
     assert.equal(typeof manifest.theme, 'object');
     assert.equal(manifest.background, undefined);
     assert.equal(manifest.action, undefined);

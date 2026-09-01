@@ -8,7 +8,7 @@
 
 1. 在正在使用的 Edge 中打开 `edge://extensions`。
 2. 打开“开发人员模式”。
-3. 依次选择“加载解压缩的扩展”，加载以下三个目录：
+3. 依次选择“加载解压缩的扩展”，加载以下三个 MV3 组件目录：
 
    - `packages/theme-light`
    - `packages/theme-dark`
@@ -24,8 +24,8 @@
 | 路径 | 作用 |
 | --- | --- |
 | `packages/controller` | MV3 控制扩展；唯一的工具栏入口，不含弹窗。 |
-| `packages/theme-light` | 静态浅色 Edge 主题。 |
-| `packages/theme-dark` | 静态深色 Edge 主题。 |
+| `packages/theme-light` | 静态 MV3 浅色 Edge 主题。 |
+| `packages/theme-dark` | 静态 MV3 深色 Edge 主题。 |
 | `tests` | 状态机、清单、图标和控制器行为测试。 |
 
 ## 验证
