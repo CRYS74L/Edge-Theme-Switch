@@ -49,12 +49,12 @@ function New-ActionIcon {
 
         $center = [single](($Size - 1) / 2)
 
-        $radius = [single]($Size * 0.205)
+        $radius = [single]($Size * 0.215)
         $diameter = [single](2 * $radius)
         $graphics.DrawEllipse($pen, [single]($center - $radius), [single]($center - $radius), $diameter, $diameter)
 
         $rayStart = [single]($radius + ($stroke * 1.6))
-        $rayEnd = [single]($Size * 0.44)
+        $rayEnd = [single]($Size * 0.425)
         foreach ($angle in 0, 45, 90, 135, 180, 225, 270, 315) {
             $radians = [Math]::PI * $angle / 180
             $cosine = [Math]::Cos($radians)
