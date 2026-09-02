@@ -139,23 +139,20 @@ async function withExpectedConsoleError(operation) {
   }
 }
 
-test('单击会在当前 Edge 中打开普通临时标签、调用一次性宿主并恢复原标签', async () => {
+test('单击只调用一次性宿主，不导航或激活用户标签页', async () => {
   const fake = createFakeChrome({ responses: [{ ok: true, mode: 'dark' }] });
 
   await withWorker(fake, 'native-toggle-success', async () => {
     await fake.clickListeners[0]();
 
-    assert.deepEqual(fake.tabQueries, [{ active: true, lastFocusedWindow: true }]);
-    assert.deepEqual(fake.createdTabs[0].details, {
-      url: 'about:blank',
-      active: true,
-    });
+    assert.deepEqual(fake.tabQueries, []);
+    assert.deepEqual(fake.createdTabs, []);
     assert.deepEqual(fake.nativeCalls, [{
       name: 'com.crys74l.edge_browser_theme_toggle',
       request: { command: 'toggle', protocolVersion: 1 },
     }]);
-    assert.deepEqual(fake.removedTabIds, [100]);
-    assert.deepEqual(fake.updatedTabs, [{ id: 42, changes: { active: true } }]);
+    assert.deepEqual(fake.removedTabIds, []);
+    assert.deepEqual(fake.updatedTabs, []);
     assert.equal(fake.storage.mode, 'dark');
     assert.deepEqual(fake.iconCalls.at(-1), {
       path: {
@@ -171,7 +168,7 @@ test('单击会在当前 Edge 中打开普通临时标签、调用一次性宿�
   });
 });
 
-test('本机宿主失败时仍清理临时标签并恢复原标签，不留下未处理异常', async () => {
+test('本机宿主失败时不创建临时标签并报告失败', async () => {
   const fake = createFakeChrome({
     sendError: new Error('Specified native messaging host not found.'),
   });
@@ -180,8 +177,9 @@ test('本机宿主失败时仍清理临时标签并恢复原标签，不留下�
     await withWorker(fake, 'native-toggle-failure', async () => {
       await fake.clickListeners[0]();
 
-      assert.deepEqual(fake.removedTabIds, [100]);
-      assert.deepEqual(fake.updatedTabs, [{ id: 42, changes: { active: true } }]);
+      assert.deepEqual(fake.createdTabs, []);
+      assert.deepEqual(fake.removedTabIds, []);
+      assert.deepEqual(fake.updatedTabs, []);
       assert.deepEqual(fake.titleCalls.at(-1), {
         title: '本机切换组件不可用：请运行一次安装脚本',
       });
@@ -189,7 +187,7 @@ test('本机宿主失败时仍清理临时标签并恢复原标签，不留下�
   });
 });
 
-test('快速连续单击会串行执行宿主调用和标签清理', async () => {
+test('快速连续单击会串行执行宿主调用且不触碰标签页', async () => {
   const fake = createFakeChrome({
     responses: [
       { ok: true, mode: 'dark' },
@@ -219,11 +217,9 @@ test('快速连续单击会串行执行宿主调用和标签清理', async () =>
       { command: 'toggle', protocolVersion: 1 },
       { command: 'toggle', protocolVersion: 1 },
     ]);
-    assert.deepEqual(fake.removedTabIds, [100, 101]);
-    assert.deepEqual(fake.updatedTabs, [
-      { id: 42, changes: { active: true } },
-      { id: 42, changes: { active: true } },
-    ]);
+    assert.deepEqual(fake.createdTabs, []);
+    assert.deepEqual(fake.removedTabIds, []);
+    assert.deepEqual(fake.updatedTabs, []);
     assert.equal(fake.storage.mode, 'light');
     assert.deepEqual(fake.titleCalls.at(-1), {
       title: 'Edge 当前为浅色，单击切换为深色',
@@ -251,15 +247,16 @@ test('服务工作进程重启后从持久化状态恢复太阳图标', async ()
   });
 });
 
-test('宿主返回不支持的模式时报告失败并完成清理', async () => {
+test('宿主返回不支持的模式时报告失败且不触碰标签页', async () => {
   const fake = createFakeChrome({ responses: [{ ok: true, mode: 'sepia' }] });
 
   await withExpectedConsoleError(async () => {
     await withWorker(fake, 'native-invalid-response', async () => {
       await fake.clickListeners[0]();
 
-      assert.deepEqual(fake.removedTabIds, [100]);
-      assert.deepEqual(fake.updatedTabs, [{ id: 42, changes: { active: true } }]);
+      assert.deepEqual(fake.createdTabs, []);
+      assert.deepEqual(fake.removedTabIds, []);
+      assert.deepEqual(fake.updatedTabs, []);
       assert.deepEqual(fake.titleCalls.at(-1), {
         title: '未更改 Edge 外观：请查看扩展错误详情',
       });

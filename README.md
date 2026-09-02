@@ -1,6 +1,6 @@
 # Edge 浏览器整体外观一键切换
 
-当前版本：`v0.3.0-dev.14`
+当前版本：`v0.3.0-dev.15`
 
 这是一个只操作当前 Microsoft Edge 窗口的开发者模式扩展。单击固定到工具栏的图标，即可在 Edge 自身的浅色和深色整体外观之间往返；网页内容、Windows 系统主题和其他应用不受影响。
 
@@ -8,16 +8,16 @@
 
 旧版通过 `chrome.management` 停用唯一的深色主题包来回到浅色。实测 Edge 139 在停用这个解压缩主题后会把主题从管理列表中移除，因此下一次点击找不到主题，形成“深色可以切到浅色、浅色无法切回深色”的故障。
 
-当前版本直接操作 Edge 设置页中的“外观”单选项，不再依赖任何颜色主题包。扩展创建一个普通的 `about:blank` 临时标签；本机宿主通过 Edge 应用菜单打开设置和外观页，选择目标项并确认 UI 状态，完成后删除临时标签并恢复原标签。
+当前版本直接操作 Edge 设置页中的“外观”单选项，不再依赖任何颜色主题包。扩展本身不创建或激活临时标签；本机宿主在同一 Edge 进程中创建一个只有一个标签的临时窗口，立即移到屏幕外，在屏外打开设置并确认 UI 状态，完成后安全关闭临时窗口并恢复原 Edge 窗口焦点。
 
 ## 项目组成
 
 1. `packages/controller`：Manifest V3 工具栏控制器，申请 `nativeMessaging` 和 `storage` 权限。
-2. `packages/native-host`：.NET 7 WPF Native Messaging 宿主，使用 Windows UI Automation 操作现有 Edge 窗口。
+2. `packages/native-host`：.NET 7 WPF Native Messaging 宿主，使用 Windows UI Automation 在屏外临时 Edge 窗口中操作设置。
 3. `scripts/install-native-host.ps1`：发布宿主、生成清单并注册当前用户级 Native Messaging 主机。
 4. `packages/theme-dark`：旧版静态主题源码，仅保留作历史兼容参考，不是当前版本的安装依赖。
 
-宿主不创建 Edge 窗口、不修改窗口尺寸、不注入网页 CSS、不监听网络、不运行回环端口，也不常驻后台。扩展连续点击通过 Promise 队列串行化。
+宿主不创建新的 Edge 进程，不导航当前用户标签，不修改现有用户窗口尺寸，不注入网页 CSS、不监听网络、不运行回环端口，也不常驻后台。临时窗口只允许单标签、屏外运行，完成后关闭；扩展连续点击通过 Promise 队列串行化。
 
 ## 安装到当前 Edge
 
@@ -70,7 +70,8 @@ git diff --check
 真实 Edge 验收应确认：
 
 - 工具栏 action 可以完成浅色→深色→浅色往返；
-- 临时设置标签在切换后消失，原活动标签恢复；
+- 点击过程中当前活动文档和活动标签保持不变，用户窗口不显示设置页；
+- 屏外临时窗口在切换后关闭，不留下额外 Edge 窗口或标签；
 - Edge 设置页的 `light`/`dark` 控件确认了目标状态；
 - `edge://extensions` 不新增错误记录；
 - Windows 主题、窗口尺寸和网页内容不变。

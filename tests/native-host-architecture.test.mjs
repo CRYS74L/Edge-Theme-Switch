@@ -20,23 +20,25 @@ test('控制器使用一次性 Native Messaging，不再依赖可被 Edge 删除
   assert.deepEqual(parsedManifest.permissions, ['nativeMessaging', 'storage']);
   assert.doesNotMatch(worker, /chrome\.management|setEnabled|getAll/);
   assert.match(worker, /sendNativeMessage/);
-  assert.match(worker, /about:blank/);
+  assert.doesNotMatch(worker, /about:blank/);
   assert.doesNotMatch(worker, /edge:\/\/settings\/appearance/);
-  assert.match(worker, /chrome\.tabs\.create/);
-  assert.match(worker, /chrome\.tabs\.remove/);
-  assert.match(worker, /chrome\.tabs\.update/);
+  assert.doesNotMatch(worker, /chrome\.tabs\.(create|remove|update)/);
   assert.match(worker, /chrome\.storage\.local/);
 });
 
-test('本机宿主只操作现有 Edge 窗口的外观控件，不创建窗口、不改尺寸、不监听网络', async () => {
+test('本机宿主在屏外临时 Edge 窗口中操作外观，不导航当前标签页', async () => {
   const source = await readProjectFile('packages/native-host/EdgeAppearanceAutomator.cs');
 
   assert.match(source, /appearance-mode-radio-group/);
   assert.match(source, /SelectionItemPattern/);
-  assert.match(source, /NavigateToAppearance/);
-  assert.match(source, /BrowserAppMenuButton/);
+  assert.match(source, /TryOpenAppearancePage/);
+  assert.match(source, /AppearanceUrl/);
+  assert.match(source, /TemporaryEdgeWindow/);
+  assert.match(source, /SetWindowPos/);
+  assert.match(source, /SendInput/);
+  assert.match(source, /VkN/);
   assert.match(source, /GetForegroundWindow/);
-  assert.doesNotMatch(source, /Ctrl\+N|TemporaryEdgeWindow|SetWindowPos|SendInput|TcpClient|Socket|HttpClient/);
+  assert.doesNotMatch(source, /TcpClient|Socket|HttpClient/);
   assert.doesNotMatch(source, /Process\.Kill|Process\.Start/);
 });
 

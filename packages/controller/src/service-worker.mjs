@@ -76,47 +76,10 @@ function assertNativeHostSuccess(response) {
   return response.mode;
 }
 
-async function removeTemporaryTab(tab) {
-  if (tab?.id === undefined) {
-    return;
-  }
-
-  try {
-    await chrome.tabs.remove(tab.id);
-  }
-  catch (error) {
-    console.error('Edge 外观切换临时标签清理失败。', error);
-  }
-}
-
-async function restoreOriginalTab(tab) {
-  if (tab?.id === undefined) {
-    return;
-  }
-
-  try {
-    await chrome.tabs.update(tab.id, { active: true });
-  }
-  catch (error) {
-    console.error('Edge 外观切换原标签恢复失败。', error);
-  }
-}
-
 async function performToggle() {
   await chrome.action.setTitle({ title: ACTION_TITLES.busy });
 
-  let originalTab;
-  let temporaryTab;
   try {
-    [originalTab] = await chrome.tabs.query({
-      active: true,
-      lastFocusedWindow: true,
-    });
-    temporaryTab = await chrome.tabs.create({
-      url: 'about:blank',
-      active: true,
-    });
-
     const mode = assertNativeHostSuccess(await callNativeHost());
     await chrome.storage.local.set({ mode });
     await setActionPresentation(mode);
@@ -124,10 +87,6 @@ async function performToggle() {
   catch (error) {
     console.error('Edge 整体外观切换失败。', error);
     await setActionFailure(error);
-  }
-  finally {
-    await removeTemporaryTab(temporaryTab);
-    await restoreOriginalTab(originalTab);
   }
 }
 
