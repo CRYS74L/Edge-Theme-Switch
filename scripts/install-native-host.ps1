@@ -6,30 +6,33 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$loopbackPort = 42761
-$bridgeBaseUrl = "http://127.0.0.1:$loopbackPort"
-$startupValueName = 'CRYS74L.EdgeBrowserThemeToggle'
-$startupRegistrySubKey = 'Software\Microsoft\Windows\CurrentVersion\Run'
-$startupRegistryProviderPath = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-$legacyNativeHostRegistryPaths = @(
-    'HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\com.crys74l.edge_browser_theme_toggle',
-    'HKCU:\Software\Microsoft\Edge\NativeMessagingHosts\com.crys74l.edgethemetoggle'
+$nativeHostName = 'com.crys74l.edge_browser_theme_toggle'
+$controllerExtensionId = 'cfcjmbhncpefmmhmpakmkigljppponpm'
+$nativeHostRegistrySubKey = "Software\Microsoft\Edge\NativeMessagingHosts\$nativeHostName"
+$nativeHostRegistryProviderPath = "HKCU:\$nativeHostRegistrySubKey"
+$legacyNativeHostRegistrySubKeys = @(
+    'Software\Microsoft\Edge\NativeMessagingHosts\com.crys74l.edgethemetoggle'
 )
+$legacyStartupValueName = 'CRYS74L.EdgeBrowserThemeToggle'
+$legacyStartupRegistrySubKey = 'Software\Microsoft\Windows\CurrentVersion\Run'
+$legacyStartupRegistryProviderPath = "HKCU:\$legacyStartupRegistrySubKey"
 
 $scriptDirectory = $PSScriptRoot
 $projectRoot = [System.IO.Directory]::GetParent($scriptDirectory).FullName
 $hostProject = Join-Path -Path $projectRoot -ChildPath 'packages\native-host\EdgeBrowserThemeToggle.NativeHost.csproj'
-$installationRoot = Join-Path -Path $env:LOCALAPPDATA -ChildPath 'CRYS74L\EdgeBrowserThemeToggle'
+$localApplicationData = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
+$installationRoot = Join-Path -Path $localApplicationData -ChildPath 'CRYS74L\EdgeBrowserThemeToggle'
 $runtimeDirectory = Join-Path -Path $installationRoot -ChildPath 'NativeHost'
 $hostExecutable = Join-Path -Path $runtimeDirectory -ChildPath 'EdgeBrowserThemeToggle.NativeHost.exe'
-$startupCommand = '"' + $hostExecutable + '" --bridge-server'
+$nativeHostManifestPath = Join-Path -Path $runtimeDirectory -ChildPath "$nativeHostName.json"
+$legacyStartupCommand = '"' + $hostExecutable + '" --bridge-server'
 $generatedRuntimeFiles = @(
     'EdgeBrowserThemeToggle.NativeHost.exe',
     'EdgeBrowserThemeToggle.NativeHost.dll',
     'EdgeBrowserThemeToggle.NativeHost.deps.json',
     'EdgeBrowserThemeToggle.NativeHost.runtimeconfig.json',
     'EdgeBrowserThemeToggle.NativeHost.pdb',
-    'com.crys74l.edge_browser_theme_toggle.json',
+    "$nativeHostName.json",
     'com.crys74l.edgethemetoggle.json'
 )
 
@@ -40,6 +43,63 @@ function Assert-ManagedRuntimeDirectory {
     if ($runtimeFull -ne $expectedRuntime) {
         throw "Refusing to manage runtime path outside the expected local installation root: $runtimeFull"
     }
+}
+
+function Ensure-DotnetUserPaths {
+    if ([string]::IsNullOrWhiteSpace($env:USERPROFILE)) {
+        $env:USERPROFILE = [Environment]::GetFolderPath([Environment+SpecialFolder]::UserProfile)
+    }
+
+    if ([string]::IsNullOrWhiteSpace($env:HOME)) {
+        $env:HOME = $env:USERPROFILE
+    }
+
+    if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        $env:LOCALAPPDATA = $localApplicationData
+    }
+
+    if ([string]::IsNullOrWhiteSpace($env:APPDATA)) {
+        $env:APPDATA = [Environment]::GetFolderPath([Environment+SpecialFolder]::ApplicationData)
+    }
+
+    if ([string]::IsNullOrWhiteSpace($env:PROGRAMDATA)) {
+        $env:PROGRAMDATA = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonApplicationData)
+    }
+
+    if ([string]::IsNullOrWhiteSpace($env:ALLUSERSPROFILE)) {
+        $env:ALLUSERSPROFILE = $env:PROGRAMDATA
+    }
+
+    if ([string]::IsNullOrWhiteSpace($env:ProgramFiles)) {
+        $env:ProgramFiles = [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFiles)
+    }
+
+    if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable('ProgramFiles(x86)', 'Process'))) {
+        [Environment]::SetEnvironmentVariable(
+            'ProgramFiles(x86)',
+            [Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFilesX86),
+            'Process')
+    }
+
+    if ([string]::IsNullOrWhiteSpace($env:CommonProgramFiles)) {
+        $env:CommonProgramFiles = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonProgramFiles)
+    }
+
+    if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable('CommonProgramFiles(x86)', 'Process'))) {
+        [Environment]::SetEnvironmentVariable(
+            'CommonProgramFiles(x86)',
+            [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonProgramFilesX86),
+            'Process')
+    }
+}
+
+function Get-RegistryDefaultValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [Microsoft.Win32.RegistryKey]$Key
+    )
+
+    return $Key.GetValue('', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
 }
 
 function Remove-GeneratedRuntimeFiles {
@@ -62,167 +122,148 @@ function Remove-GeneratedRuntimeFiles {
     }
 }
 
-function Remove-LegacyNativeMessagingRegistrations {
-    foreach ($registryPath in $legacyNativeHostRegistryPaths) {
-        if (Test-Path -LiteralPath $registryPath) {
-            Remove-Item -LiteralPath $registryPath -Recurse -Force
-        }
-    }
-}
-
-function Send-LoopbackBridgeRequest {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Request
-    )
-
-    $client = $null
-    $stream = $null
-    $reader = $null
-    try {
-        $client = [System.Net.Sockets.TcpClient]::new()
-        $connect = $client.ConnectAsync('127.0.0.1', $loopbackPort)
-        if (-not $connect.Wait(1000)) {
-            return $null
-        }
-
-        $client.ReceiveTimeout = 1000
-        $client.SendTimeout = 1000
-        $stream = $client.GetStream()
-        $bytes = [System.Text.Encoding]::ASCII.GetBytes($Request)
-        $stream.Write($bytes, 0, $bytes.Length)
-        $stream.Flush()
-        $reader = [System.IO.StreamReader]::new($stream, [System.Text.Encoding]::UTF8, $false, 1024, $true)
-        return $reader.ReadToEnd()
-    }
-    catch {
-        return $null
-    }
-    finally {
-        if ($null -ne $reader) { $reader.Dispose() }
-        if ($null -ne $stream) { $stream.Dispose() }
-        if ($null -ne $client) { $client.Dispose() }
-    }
-}
-
-function Test-LoopbackBridge {
-    $response = Send-LoopbackBridgeRequest -Request "GET /health HTTP/1.1`r`nHost: 127.0.0.1:$loopbackPort`r`n`r`n"
-    return $null -ne $response -and $response.Contains('"mode":"ready"')
-}
-
-function Stop-LoopbackBridge {
-    if (-not (Test-LoopbackBridge)) {
-        return
-    }
-
-    [void](Send-LoopbackBridgeRequest -Request "POST /shutdown HTTP/1.1`r`nHost: 127.0.0.1:$loopbackPort`r`nContent-Length: 0`r`n`r`n")
-    $deadline = [DateTime]::UtcNow.AddSeconds(3)
-    while ([DateTime]::UtcNow -lt $deadline) {
-        if (-not (Test-LoopbackBridge)) {
-            return
-        }
-
-        Start-Sleep -Milliseconds 100
-    }
-
-    throw "The local loopback bridge did not stop cleanly."
-}
-
-function Set-BridgeStartup {
-    $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($startupRegistrySubKey)
-    try {
-        $key.SetValue($startupValueName, $startupCommand, [Microsoft.Win32.RegistryValueKind]::String)
-    }
-    finally {
-        $key.Dispose()
-    }
-}
-
-function Remove-BridgeStartup {
-    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($startupRegistrySubKey, $true)
+function Remove-NativeHostRegistration {
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($nativeHostRegistrySubKey, $true)
     if ($null -eq $key) {
         return
     }
 
     try {
-        $currentValue = $key.GetValue($startupValueName, $null)
+        $currentValue = Get-RegistryDefaultValue -Key $key
+        if ($currentValue -ne $nativeHostManifestPath) {
+            throw "Refusing to remove an unexpected native host registration at $nativeHostRegistryProviderPath"
+        }
+
+        if ($key.GetSubKeyNames().Count -ne 0) {
+            throw "Refusing to remove a native host registration with unexpected child keys at $nativeHostRegistryProviderPath"
+        }
+    }
+    finally {
+        $key.Dispose()
+    }
+
+    [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($nativeHostRegistrySubKey, $false)
+}
+
+function Remove-LegacyNativeMessagingRegistrations {
+    foreach ($subKey in $legacyNativeHostRegistrySubKeys) {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($subKey, $true)
+        if ($null -eq $key) {
+            continue
+        }
+
+        try {
+            $currentValue = Get-RegistryDefaultValue -Key $key
+            if ($currentValue -ne $nativeHostManifestPath) {
+                throw "Refusing to remove an unexpected legacy native host registration at HKCU:\$subKey"
+            }
+
+            if ($key.GetSubKeyNames().Count -ne 0) {
+                throw "Refusing to remove a legacy native host registration with unexpected child keys at HKCU:\$subKey"
+            }
+        }
+        finally {
+            $key.Dispose()
+        }
+
+        [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($subKey, $false)
+    }
+}
+
+function Remove-LegacyStartup {
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($legacyStartupRegistrySubKey, $true)
+    if ($null -eq $key) {
+        return
+    }
+
+    try {
+        $currentValue = $key.GetValue(
+            $legacyStartupValueName,
+            $null,
+            [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
         if ($null -eq $currentValue) {
             return
         }
 
-        if ($currentValue -ne $startupCommand) {
-            throw "Refusing to remove an unexpected startup value at $startupRegistryProviderPath\$startupValueName"
+        if ($currentValue -ne $legacyStartupCommand) {
+            throw "Refusing to remove an unexpected startup value at $legacyStartupRegistryProviderPath\$legacyStartupValueName"
         }
 
-        $key.DeleteValue($startupValueName, $false)
+        $key.DeleteValue($legacyStartupValueName, $false)
     }
     finally {
         $key.Dispose()
     }
 }
 
-function Start-LoopbackBridge {
-    if (Test-LoopbackBridge) {
-        return
+function Write-NativeHostManifest {
+    $manifest = [ordered]@{
+        name = $nativeHostName
+        description = 'One-shot Edge appearance toggle host.'
+        path = $hostExecutable
+        type = 'stdio'
+        allowed_origins = @("chrome-extension://$controllerExtensionId/")
     }
+    $json = $manifest | ConvertTo-Json -Depth 4
+    [System.IO.File]::WriteAllText(
+        $nativeHostManifestPath,
+        $json + [Environment]::NewLine,
+        [System.Text.UTF8Encoding]::new($false))
+}
 
-    $process = Start-Process -FilePath $hostExecutable -ArgumentList '--bridge-server' -WindowStyle Hidden -PassThru
-    $deadline = [DateTime]::UtcNow.AddSeconds(5)
-    while ([DateTime]::UtcNow -lt $deadline) {
-        if (Test-LoopbackBridge) {
-            return $process
+function Set-NativeHostRegistration {
+    $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($nativeHostRegistrySubKey)
+    try {
+        $currentValue = Get-RegistryDefaultValue -Key $key
+        if ($null -ne $currentValue -and $currentValue -ne $nativeHostManifestPath) {
+            throw "Refusing to overwrite an unexpected native host registration at $nativeHostRegistryProviderPath"
         }
 
-        if ($process.HasExited) {
-            throw "The local loopback bridge exited during startup with code $($process.ExitCode)."
-        }
-
-        Start-Sleep -Milliseconds 100
+        $key.SetValue('', $nativeHostManifestPath, [Microsoft.Win32.RegistryValueKind]::String)
     }
-
-    throw "The local loopback bridge did not become healthy at $bridgeBaseUrl."
+    finally {
+        $key.Dispose()
+    }
 }
 
 if ($Uninstall) {
-    Stop-LoopbackBridge
-    Remove-BridgeStartup
+    Remove-NativeHostRegistration
     Remove-LegacyNativeMessagingRegistrations
+    Remove-LegacyStartup
     Remove-GeneratedRuntimeFiles
     [pscustomobject]@{
         Uninstalled = $true
-        StartupValue = "$startupRegistryProviderPath\$startupValueName"
+        Registration = $nativeHostRegistryProviderPath
         RuntimeDirectory = $runtimeDirectory
+        PersistentBackgroundProcess = $false
     }
     exit 0
 }
 
 Assert-ManagedRuntimeDirectory
+Ensure-DotnetUserPaths
 if (-not (Test-Path -LiteralPath $hostProject -PathType Leaf)) {
-    throw "Local bridge project was not found: $hostProject"
+    throw "Native Messaging host project was not found: $hostProject"
 }
 
-Stop-LoopbackBridge
+Remove-LegacyStartup
 & dotnet publish $hostProject --configuration Release --runtime win-x64 --self-contained false --output $runtimeDirectory --nologo
 if ($LASTEXITCODE -ne 0) {
     throw "dotnet publish failed with exit code $LASTEXITCODE"
 }
 
 if (-not (Test-Path -LiteralPath $hostExecutable -PathType Leaf)) {
-    throw "Local bridge executable was not produced: $hostExecutable"
+    throw "Native Messaging host executable was not produced: $hostExecutable"
 }
 
+Write-NativeHostManifest
 Remove-LegacyNativeMessagingRegistrations
-Set-BridgeStartup
-$startedProcess = Start-LoopbackBridge
-
-if (-not (Test-LoopbackBridge)) {
-    throw "Local bridge health verification failed at $bridgeBaseUrl."
-}
+Set-NativeHostRegistration
 
 [pscustomobject]@{
     Installed = $true
     HostExecutable = $hostExecutable
-    StartupValue = "$startupRegistryProviderPath\$startupValueName"
-    LoopbackUrl = $bridgeBaseUrl
-    ProcessId = if ($null -ne $startedProcess) { $startedProcess.Id } else { $null }
+    HostManifest = $nativeHostManifestPath
+    Registration = $nativeHostRegistryProviderPath
+    PersistentBackgroundProcess = $false
 }

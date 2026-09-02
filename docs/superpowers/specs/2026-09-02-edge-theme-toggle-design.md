@@ -2,49 +2,45 @@
 
 ## 目标
 
-在当前 Windows 上已打开的 Microsoft Edge 中，单击一个固定到工具栏的扩展图标，在 Edge 自身的“浅色”和“深色”整体外观之间往返。验收对象是浏览器顶栏、标签栏、地址栏和内置页面；网页内容和 Windows 系统主题不属于切换对象。
+在已经打开的当前 Microsoft Edge 中，单击固定工具栏图标，在 Edge 自身浅色与深色整体外观之间往返。验收对象是浏览器顶栏、标签栏、地址栏和内置页面；网页内容与 Windows 系统主题不属于切换对象。
 
-## 已验证事实
+## 已验证边界
 
-- MV3 的公开 API 不能直接写入 Edge 的“整体外观”。
-- 静态 theme 包不能可靠往返：Chromium 会回收非当前主题包；网页 CSS 注入则只能改变网页内容，都不能满足目标。
-- 当前 Edge 的 `edge://settings/appearance` 暴露稳定 UI Automation 标识：`appearance-mode-radio-group`、`light`、`dark`。
-- 选中 `dark` 或 `light` 会立即改变 Edge browser chrome，且不会改变 Windows 主题。
-- Edge 139 当前环境无法可靠动态加载 `chrome.action.setIcon()` 的扩展文件；控制扩展只更新 action 标题，不让图标加载异常掩盖已确认的切换结果。
+- Edge 139 的公开 MV3 API 没有向普通扩展开放写入整体外观的能力。私有 settingsPrivate 接口不适用于普通扩展。
+- 静态 theme 包能着色 browser chrome，但临时加载的另一个主题会被 Edge 回收，不能稳定往返。网页 CSS 只能改变网页内容。
+- edge://settings/appearance 的 light 与 dark UI Automation 标识会真实改变 Edge 整体外观，不会写入 Windows 系统主题。
+- 该环境的 .NET socket 创建曾报 SocketException 10106，因此回环 TCP bridge 既不必要也不可靠。
 
-## 架构
+## 交付架构
 
-1. `packages/controller` 是唯一需要在 Edge 中加载和固定的 MV3 扩展。action 向 `http://127.0.0.1:42761/toggle` 发送受本机桥接令牌保护的 `toggle` 请求。
-2. `packages/native-host` 是用户级常驻的 .NET 7 回环桥接。它只绑定 `127.0.0.1`，由安装脚本隐式启动并通过唯一 Run 项在登录后恢复；不创建 Windows 服务、计划任务或 Edge 政策。
-3. bridge 只查找当前前台 Edge 窗口；若没有 Edge 或检测到多个候选窗口，则明确失败，绝不启动新 Edge 或猜测目标。
-4. bridge 用 UI Automation 在目标 Edge 内短暂创建 `edge://settings/appearance` 标签，读取当前 `dark` 状态并选择相反的 `light`/`dark` 控件，然后关闭临时标签。
-5. 在临时导航前，bridge 截取目标 Edge 窗口，创建所属当前 Edge 的顶级遮罩窗。遮罩保持在 Edge 之上，直到临时标签已关闭、原活动页已恢复且浏览器 compositor 已稳定；因此内部设置页不会暴露给用户。
-6. 遮罩按目标 Edge 窗口 DPI 换算坐标，避免 125% 等显示缩放下出现右侧或底部漏画。
+1. packages/controller 是唯一需要固定到 Edge 工具栏的 MV3 扩展。点击 action 会通过 chrome.runtime.sendNativeMessage 向 com.crys74l.edge_browser_theme_toggle 发送一次 toggle 请求。
+2. Edge 按 Native Messaging 协议只为本次点击启动 packages/native-host。宿主从 stdin 读取一帧请求，向 stdout 写一帧结果，然后退出；没有端口、网络请求、Run 项或常驻进程。
+3. 宿主优先使用 Edge 传入的 parent-window 句柄锁定发起单击的窗口。它在同一 Edge 进程中创建一个单标签临时窗口，立即移到屏幕外；当前可见窗口的标签不会导航、替换、截图或拉伸。
+4. 临时窗口打开 edge://settings/appearance，读取已选 light 或 dark，选择相反模式并确认结果，然后关闭自身并把焦点还给原窗口。
+5. controller 只在 Native Messaging 返回 ok 加真实 mode 后更新 action 标题。快速连续点击被串行化，避免重叠的临时窗口。
 
-## 本机集成边界
+## 安全与副作用边界
 
-安装脚本只管理以下精确目标：
+- 不使用截图、覆盖层、透明窗、网页 CSS、静态 theme 包、回环 HTTP、代理、Windows 服务、计划任务或登录自启。
+- 常规成功和可安全清理失败都会关闭临时窗口。若无法确认它仍是同一进程的单标签窗口，宿主拒绝关闭不确定目标并报告失败，而不关闭用户窗口。
+- 宿主不结束或重启用户可见 Edge，也不更改 Windows 主题、Edge Preferences、代理或政策。
+- Native Messaging 的 stdin/stdout 是 Edge 与本机进程之间的一次性管道，不是网络连接。
 
-- 运行文件：`%LOCALAPPDATA%\CRYS74L\EdgeBrowserThemeToggle\NativeHost`
-- 启动项：`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\CRYS74L.EdgeBrowserThemeToggle`
-- 仅为兼容旧版本而清理的 Native Messaging 项：
-  - `HKCU\Software\Microsoft\Edge\NativeMessagingHosts\com.crys74l.edge_browser_theme_toggle`
-  - `HKCU\Software\Microsoft\Edge\NativeMessagingHosts\com.crys74l.edgethemetoggle`
+## 本机集成与可逆性
 
-卸载只停止本项目的回环 bridge、移除上述精确启动项和脚本生成文件；不修改 Windows 主题、Edge Preferences、策略或第三方扩展。
+安装脚本只管理以下精确对象：
 
-## 交互约束
+- 运行文件：%LOCALAPPDATA%\CRYS74L\EdgeBrowserThemeToggle\NativeHost
+- Native Messaging 清单：%LOCALAPPDATA%\CRYS74L\EdgeBrowserThemeToggle\NativeHost\com.crys74l.edge_browser_theme_toggle.json
+- 用户级注册表项：HKCU\Software\Microsoft\Edge\NativeMessagingHosts\com.crys74l.edge_browser_theme_toggle，默认值为上述清单完整路径。
 
-- 无 popup、选项页、侧边栏、内容脚本、网页 CSS 注入、静态 theme 包或 Edge Preferences 写入。
-- “系统”不是目标状态：首次点击从系统/浅色切到深色，之后在显式浅色与深色之间往返。
-- 成功后 action 标题反映已确认的 Edge 外观和下一次切换方向；失败时不谎称成功。
-- 不结束、重启或另开 Edge 窗口。
-- 切换期间原窗口画面会短暂冻结，避免暴露内部临时页面；完成后直接显示新 chrome。
+卸载只在默认值仍等于本项目清单路径时移除这一项，并仅删除安装脚本允许列表中的运行文件。它不触碰 Windows 主题、Edge Preferences、政策、代理、其他扩展、当前 Edge 窗口或用户标签页。
 
-## 验证标准
+## 验收证据
 
-1. 静态测试：manifest 没有 `scripting`、`activeTab`、内容脚本或网页 CSS；只允许回环 bridge host permission。
-2. bridge 测试：请求令牌、HTTP 协议、错误路径和开关响应可重复验证。
-3. Native host 测试：协议长度帧、请求校验、深色/浅色决定逻辑和异常结果可重复验证。
-4. 构建测试：.NET host 与 Node 测试均通过。
-5. 真实当前 Edge 验收：工具栏 action 连续两次触发，浅→深、深→浅均改变 browser chrome，标签数不变，过渡期间不显示空白页、临时标签或设置页，Windows 主题保持不变。
+当前 Edge 上已经完成四次真实工具栏点击：
+
+- 深色顶栏 RGB 32,32,32 与浅色顶栏 RGB 243,243,243 双向切换。
+- 第二次、第三次、第四次点击都在约两秒内完成，最终回到深色。
+- 目标 Edge 窗口边界始终不变，本机组件每次完成后都没有残留进程。
+- Windows AppsUseLightTheme 和 SystemUsesLightTheme 在前后完全相同。

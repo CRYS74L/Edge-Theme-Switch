@@ -1,17 +1,16 @@
 import {
   ACTION_TITLES,
-  LOCAL_BRIDGE_TOKEN,
-  LOCAL_BRIDGE_TOGGLE_URL,
+  NATIVE_HOST_NAME,
   NATIVE_PROTOCOL_VERSION,
 } from './constants.mjs';
 
 let operationTail = Promise.resolve();
 
-class NativeBridgeResponseError extends Error {
+class NativeHostResponseError extends Error {
   constructor(response) {
     super(response?.message || response?.errorCode || 'The native bridge returned no supported result.');
-    this.name = 'NativeBridgeResponseError';
-    this.code = response?.errorCode || 'native-bridge-response';
+    this.name = 'NativeHostResponseError';
+    this.code = response?.errorCode || 'native-host-response';
   }
 }
 
@@ -21,23 +20,10 @@ function enqueue(operation) {
   return result;
 }
 
-async function sendLocalToggleRequest() {
-  const response = await fetch(LOCAL_BRIDGE_TOGGLE_URL, {
-    method: 'POST',
-    cache: 'no-store',
-    headers: {
-      'content-type': 'application/json',
-      'x-edge-browser-theme-toggle': LOCAL_BRIDGE_TOKEN,
-    },
-    body: JSON.stringify({ command: 'toggle', protocolVersion: NATIVE_PROTOCOL_VERSION }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Local bridge returned HTTP ${response.status}.`);
-  }
-
-  return response.json();
-}
+const sendNativeToggleRequest = () => chrome.runtime.sendNativeMessage(
+  NATIVE_HOST_NAME,
+  { command: 'toggle', protocolVersion: NATIVE_PROTOCOL_VERSION },
+);
 
 function isSupportedMode(mode) {
   return mode === 'light' || mode === 'dark';
@@ -49,8 +35,8 @@ async function setActionPresentation(mode) {
 
 async function setActionFailure(error) {
   const message = String(error?.message ?? '');
-  const title = /failed to fetch|networkerror|local bridge returned http/i.test(message)
-    ? ACTION_TITLES.bridgeUnavailable
+  const title = /native messaging|native host|specified native|host not found/i.test(message)
+    ? ACTION_TITLES.nativeHostUnavailable
     : ACTION_TITLES.failed;
   await chrome.action.setTitle({ title });
 }
@@ -59,9 +45,9 @@ async function performToggle() {
   await chrome.action.setTitle({ title: ACTION_TITLES.busy });
 
   try {
-    const response = await sendLocalToggleRequest();
+    const response = await sendNativeToggleRequest();
     if (!response?.ok || !isSupportedMode(response.mode)) {
-      throw new NativeBridgeResponseError(response);
+      throw new NativeHostResponseError(response);
     }
 
     await setActionPresentation(response.mode);

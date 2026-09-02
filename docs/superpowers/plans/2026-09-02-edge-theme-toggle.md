@@ -1,23 +1,47 @@
-# Edge 浏览器整体外观一键切换实施记录
+# Edge Native Messaging 无界面切换实施记录
 
-**目标：** 在不改变 Windows 主题、不结束当前 Edge 的前提下，用一个固定工具栏 action 在当前 Edge 的浅色和深色整体外观之间往返。
+**目标：** 以单击 controller 工具栏 action 的方式可靠切换当前 Edge 的整体浅深色外观，不使用截图遮罩、回环网络或常驻助手。
 
-**交付架构：** MV3 action → 仅绑定 `127.0.0.1:42761` 的本机回环 bridge → 当前 Edge `edge://settings/appearance` UI Automation。bridge 使用当前窗口截图遮罩隔离内部临时标签，并以当前 Edge DPI 校正遮罩几何。
+**最终架构：** controller 通过 Native Messaging 一次性启动宿主；宿主在同一 Edge 进程的屏幕外临时窗口中操作 Edge 外观设置，确认、清理并退出。controller 只接受协议结果并更新标题。
 
-## 已完成
+## 约束
 
-- [x] 取消静态 theme 包与网页 CSS 注入路线：前者在 Edge 生命周期中只能可靠切换一次，后者不能改变 browser chrome。
-- [x] 建立唯一 MV3 controller：无 popup、无内容脚本、无网页权限，仅允许本机回环 bridge。
-- [x] 建立 .NET 7 回环 bridge：支持 `/health`、受令牌保护的 `/toggle` 与仅供安装脚本使用的 `/shutdown`。
-- [x] 建立 Edge UI Automation：读取 `light`/`dark`，选择相反外观，确认后关闭临时标签。
-- [x] 建立可逆安装脚本：发布到 `%LOCALAPPDATA%\CRYS74L\EdgeBrowserThemeToggle\NativeHost`，维护唯一 Run 值，精确清理旧 Native Messaging 兼容项。
-- [x] 修复 Edge 动态 action 图标加载异常：改为只更新 action 标题，不把无关图标失败误报为 bridge 未运行。
-- [x] 修复视觉隔离：所属当前 Edge 的顶级不激活遮罩、持续置顶、原页稳定后撤除。
-- [x] 修复 125% DPI 漏画：按目标 Edge 的 `GetDpiForWindow` 换算遮罩窗坐标，真实测得遮罩与 Edge 同为 `2578×1398`。
-- [x] 真实当前 Edge 双向验收：浅→深、深→浅均保留 6 个原标签，50–4000ms 连续截图不显示空白页、临时标签或设置页。
+- 不写入 Windows 主题、Edge Preferences、代理或 Edge policy。
+- 不创建截图、覆盖层、监听端口、Windows 服务、计划任务或 Run 项。
+- 安装脚本只管理项目的 LocalAppData 运行目录和一个精确 Native Messaging HKCU 键。
+- 只在获得实际 mode 确认后显示切换成功。
 
-## 最终核验清单
+## 已完成工作
 
-- [x] 运行完整 Node 与 .NET 契约测试。
-- [x] 运行 `git diff --check`、敏感文件扫描与 Git 远程核验。
-- [x] 提交、创建唯一 annotated 版本标签并推送。
+### Controller 改为 Native Messaging
+
+- [x] controller 清单只保留 nativeMessaging 权限；没有 host permissions、网页注入、popup 或选项页。
+- [x] 固定 host 名与 protocolVersion，使用 chrome.runtime.sendNativeMessage。
+- [x] 快速连续点击串行执行；宿主不可用和协议失败时不会伪造成功标题。
+- [x] Node 契约测试覆盖成功、串行与宿主不可用三种结果。
+
+### 宿主与安装器去常驻化
+
+- [x] 删除 LoopbackBridgeProtocol、LoopbackBridgeServer、WindowSnapshotOverlay 和回环契约项目。
+- [x] 添加一次性 NativeHostApplication 和 parent-window 参数解析。
+- [x] 安装脚本发布 stdio Native Messaging 宿主，写入精确 Edge HKCU 注册项，并只清理匹配的旧 Run 值。
+- [x] 删除无用的 Windows Forms 依赖。
+
+### 屏幕外临时窗口自动化
+
+- [x] 临时窗口限定为同一 Edge PID、创建后单标签，关闭前再次验证。
+- [x] 临时窗口移动到物理屏幕外，在其中操作 edge://settings/appearance；原窗口不导航、不截图、不拉伸。
+- [x] 成功、定位失败和标签验证失败路径都尝试清理已创建的临时窗口；不确定窗口不会被盲目关闭。
+- [x] 切换结果、清理失败和焦点恢复都有稳定错误码，不报告未确认的成功。
+
+### 当前 Edge 实际验收
+
+- [x] 安装 Native Messaging 宿主，并核验清单、注册表和 controller 固定扩展 ID。
+- [x] 真实工具栏点击完成深色到浅色，再完成三次连续反向切换。
+- [x] 每次约两秒完成；顶栏像素双向变化，窗口边界不变，Windows 主题不变，宿主进程不残留。
+- [x] 清理仅用于诊断的 Chromium 与 Google Chrome 回退注册项，最终只保留 Edge 注册项。
+
+## 收尾验证
+
+- [ ] 运行完整 Node 和 .NET 测试、安装器重装检查、git diff --check 与敏感文件扫描。
+- [ ] 创建唯一 annotated 版本标签并推送。
