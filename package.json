@@ -1,7 +1,7 @@
 {
   "name": "edge-browser-theme-toggle",
   "private": true,
-  "version": "0.3.0-dev.8",
+  "version": "0.3.0-dev.9",
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
