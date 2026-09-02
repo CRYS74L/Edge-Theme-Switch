@@ -76,62 +76,9 @@ function createFakeChrome(initialThemes) {
   };
 }
 
-function createImageDataEnvironment() {
-  const fetches = [];
-
-  class FakeOffscreenCanvas {
-    constructor(width, height) {
-      this.width = width;
-      this.height = height;
-    }
-
-    getContext(type) {
-      assert.equal(type, '2d');
-      return {
-        clearRect() {},
-        drawImage() {},
-        getImageData(_x, _y, width, height) {
-          return {
-            data: new Uint8ClampedArray(width * height * 4),
-            width,
-            height,
-          };
-        },
-      };
-    }
-  }
-
-  return {
-    fetches,
-    fetch: async (url) => {
-      fetches.push(url);
-      return {
-        ok: true,
-        status: 200,
-        async blob() {
-          return {};
-        },
-      };
-    },
-    createImageBitmap: async () => ({
-      close() {},
-    }),
-    OffscreenCanvas: FakeOffscreenCanvas,
-  };
-}
-
 async function withWorker(fake, marker, operation) {
   const originalChrome = globalThis.chrome;
-  const originalImageDataGlobals = {
-    fetch: globalThis.fetch,
-    createImageBitmap: globalThis.createImageBitmap,
-    OffscreenCanvas: globalThis.OffscreenCanvas,
-  };
   globalThis.chrome = fake.chrome;
-
-  if (fake.imageDataEnvironment) {
-    Object.assign(globalThis, fake.imageDataEnvironment);
-  }
 
   try {
     await import(`${serviceWorkerUrl}?${marker}=${Date.now()}`);
@@ -144,7 +91,6 @@ async function withWorker(fake, marker, operation) {
     else {
       globalThis.chrome = originalChrome;
     }
-    Object.assign(globalThis, originalImageDataGlobals);
   }
 }
 
@@ -231,48 +177,6 @@ test('Edge 启动时会按已启用的深色主题同步浅色线性图标', asy
     assert.deepEqual(fake.titleCalls.at(-1), {
       title: 'Edge 当前为深色，单击切换为浅色',
     });
-  });
-});
-
-test('Edge 支持像素数据时同步 action 图标，令扩展菜单跟随当前颜色模式', async () => {
-  const fake = createFakeChrome([
-    { id: 'edge-dark-theme', name: 'Edge 外观切换 - 深色主题', type: 'theme', enabled: true },
-  ]);
-  fake.imageDataEnvironment = createImageDataEnvironment();
-
-  await withWorker(fake, 'image-data-presentation', async () => {
-    await fake.startupListeners[0]();
-
-    function assertImageDataCall(expectedSizes) {
-      const iconCall = fake.iconCalls.at(-1);
-      assert.deepEqual(Object.keys(iconCall), ['imageData']);
-      assert.deepEqual(Object.keys(iconCall.imageData), ['16', '32', '48', '128']);
-      for (const size of [16, 32, 48, 128]) {
-        assert.equal(iconCall.imageData[size].width, size);
-        assert.equal(iconCall.imageData[size].height, size);
-        assert.equal(iconCall.imageData[size].data.length, size * size * 4);
-      }
-      assert.deepEqual(fake.imageDataEnvironment.fetches, expectedSizes);
-    }
-
-    assertImageDataCall([
-      'icons/icon-dark-16.png',
-      'icons/icon-dark-32.png',
-      'icons/icon-dark-48.png',
-      'icons/icon-dark-128.png',
-    ]);
-
-    await fake.clickListeners[0]();
-    assertImageDataCall([
-      'icons/icon-dark-16.png',
-      'icons/icon-dark-32.png',
-      'icons/icon-dark-48.png',
-      'icons/icon-dark-128.png',
-      'icons/icon-light-16.png',
-      'icons/icon-light-32.png',
-      'icons/icon-light-48.png',
-      'icons/icon-light-128.png',
-    ]);
   });
 });
 

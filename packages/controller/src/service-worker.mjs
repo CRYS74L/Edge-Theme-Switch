@@ -5,7 +5,6 @@ import {
 } from './constants.mjs';
 
 let operationTail = Promise.resolve();
-const actionIconImageDataCache = new Map();
 
 class ThemeAvailabilityError extends Error {
   constructor() {
@@ -35,76 +34,10 @@ function resolveActionIconPaths(mode) {
   );
 }
 
-function canUseActionIconImageData() {
-  return (
-    typeof globalThis.fetch === 'function'
-    && typeof globalThis.createImageBitmap === 'function'
-    && typeof globalThis.OffscreenCanvas === 'function'
-  );
-}
-
-async function resolveActionIconImageData(mode) {
-  const cached = actionIconImageDataCache.get(mode);
-  if (cached) {
-    return cached;
-  }
-
-  if (!canUseActionIconImageData()) {
-    throw new Error('当前 Edge 不支持在服务工作进程中读取 action 图标像素。');
-  }
-
-  const imageData = {};
-  const fetchResource = globalThis.fetch;
-  for (const [sizeText, path] of Object.entries(ACTION_ICON_PATHS[mode])) {
-    const size = Number(sizeText);
-    const response = await fetchResource(chrome.runtime.getURL(path));
-    if (!response.ok) {
-      throw new Error(`读取 action 图标失败：${path}（HTTP ${response.status}）。`);
-    }
-
-    const bitmap = await globalThis.createImageBitmap(await response.blob());
-    try {
-      const canvas = new globalThis.OffscreenCanvas(size, size);
-      const context = canvas.getContext('2d', { willReadFrequently: true });
-      if (!context) {
-        throw new Error('当前 Edge 无法创建 action 图标画布。');
-      }
-      context.clearRect(0, 0, size, size);
-      context.drawImage(bitmap, 0, 0, size, size);
-      imageData[sizeText] = context.getImageData(0, 0, size, size);
-    }
-    finally {
-      bitmap.close?.();
-    }
-  }
-
-  actionIconImageDataCache.set(mode, imageData);
-  return imageData;
-}
-
-async function setActionIcon(mode) {
-  if (!canUseActionIconImageData()) {
-    await chrome.action.setIcon({ path: resolveActionIconPaths(mode) });
-    return;
-  }
-
-  try {
-    // Edge 的扩展菜单在部分版本不会刷新 path 图标，但会消费 imageData
-    // 更新通知；优先走像素数据，同时保留 path 作为兼容回退。
-    await chrome.action.setIcon({
-      imageData: await resolveActionIconImageData(mode),
-    });
-  }
-  catch (error) {
-    console.warn('Edge 未接受 action 图标像素数据，回退到静态路径。', error);
-    await chrome.action.setIcon({ path: resolveActionIconPaths(mode) });
-  }
-}
-
 async function setActionPresentation(mode) {
   await Promise.all([
     chrome.action.setTitle({ title: ACTION_TITLES[mode] }),
-    setActionIcon(mode),
+    chrome.action.setIcon({ path: resolveActionIconPaths(mode) }),
   ]);
 }
 
