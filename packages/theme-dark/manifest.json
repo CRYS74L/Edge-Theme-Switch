@@ -8,6 +8,7 @@
       "frame": [32, 32, 32],
       "frame_inactive": [32, 32, 32],
       "toolbar": [32, 32, 32],
+      "toolbar_button_icon": [245, 245, 245],
       "tab_text": [245, 245, 245],
       "tab_background_text": [245, 245, 245],
       "bookmark_text": [245, 245, 245],

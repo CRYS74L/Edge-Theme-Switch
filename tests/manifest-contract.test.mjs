@@ -51,6 +51,7 @@ test('深色主题包是无脚本的浏览器主题', async () => {
   assert.equal(manifest.background, undefined);
   assert.equal(manifest.permissions, undefined);
   assert.ok(manifest.theme?.colors);
+  assert.deepEqual(manifest.theme.colors.toolbar_button_icon, [245, 245, 245]);
 });
 
 test('项目不再保留网页 CSS 注入实现', async () => {
