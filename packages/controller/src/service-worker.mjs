@@ -1,16 +1,15 @@
 import {
   ACTION_TITLES,
-  NATIVE_HOST_NAME,
-  NATIVE_PROTOCOL_VERSION,
+  DARK_THEME_NAME,
 } from './constants.mjs';
 
 let operationTail = Promise.resolve();
 
-class NativeHostResponseError extends Error {
-  constructor(response) {
-    super(response?.message || response?.errorCode || 'The native bridge returned no supported result.');
-    this.name = 'NativeHostResponseError';
-    this.code = response?.errorCode || 'native-host-response';
+class ThemeAvailabilityError extends Error {
+  constructor() {
+    super(`The dark theme package "${DARK_THEME_NAME}" is not installed.`);
+    this.name = 'ThemeAvailabilityError';
+    this.code = 'theme-packages-unavailable';
   }
 }
 
@@ -20,13 +19,10 @@ function enqueue(operation) {
   return result;
 }
 
-const sendNativeToggleRequest = () => chrome.runtime.sendNativeMessage(
-  NATIVE_HOST_NAME,
-  { command: 'toggle', protocolVersion: NATIVE_PROTOCOL_VERSION },
-);
-
-function isSupportedMode(mode) {
-  return mode === 'light' || mode === 'dark';
+function findDarkTheme(themes) {
+  return themes.find((theme) => (
+    theme.type === 'theme' && theme.name === DARK_THEME_NAME
+  ));
 }
 
 async function setActionPresentation(mode) {
@@ -34,23 +30,37 @@ async function setActionPresentation(mode) {
 }
 
 async function setActionFailure(error) {
-  const message = String(error?.message ?? '');
-  const title = /native messaging|native host|specified native|host not found/i.test(message)
-    ? ACTION_TITLES.nativeHostUnavailable
+  const title = error instanceof ThemeAvailabilityError
+    ? ACTION_TITLES.themesUnavailable
     : ACTION_TITLES.failed;
   await chrome.action.setTitle({ title });
+}
+
+async function getDarkTheme() {
+  const themes = await chrome.management.getAll();
+  const dark = findDarkTheme(themes);
+  if (!dark) {
+    throw new ThemeAvailabilityError();
+  }
+  return dark;
+}
+
+async function setDarkThemeEnabled(theme, enabled) {
+  await chrome.management.setEnabled(theme.id, enabled);
+  const current = await chrome.management.get(theme.id);
+  if (current?.enabled !== enabled) {
+    throw new Error(`Edge did not ${enabled ? 'enable' : 'disable'} theme ${theme.id}.`);
+  }
 }
 
 async function performToggle() {
   await chrome.action.setTitle({ title: ACTION_TITLES.busy });
 
   try {
-    const response = await sendNativeToggleRequest();
-    if (!response?.ok || !isSupportedMode(response.mode)) {
-      throw new NativeHostResponseError(response);
-    }
-
-    await setActionPresentation(response.mode);
+    const dark = await getDarkTheme();
+    const nextEnabled = !dark.enabled;
+    await setDarkThemeEnabled(dark, nextEnabled);
+    await setActionPresentation(nextEnabled ? 'dark' : 'light');
   }
   catch (error) {
     console.error('Edge 整体外观切换失败。', error);

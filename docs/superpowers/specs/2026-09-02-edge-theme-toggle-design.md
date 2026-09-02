@@ -2,45 +2,47 @@
 
 ## 目标
 
-在已经打开的当前 Microsoft Edge 中，单击固定工具栏图标，在 Edge 自身浅色与深色整体外观之间往返。验收对象是浏览器顶栏、标签栏、地址栏和内置页面；网页内容与 Windows 系统主题不属于切换对象。
+在用户当前已经打开的 Microsoft Edge 中，单击固定工具栏图标，在浏览器自身的深色与内置浅色外观之间往返。验收对象是 Edge 顶栏、标签栏、工具栏、地址栏和 Edge 内置页面；网页内容与 Windows 系统主题不属于切换对象。
 
-## 已验证边界
+## 关键结论
 
-- Edge 139 的公开 MV3 API 没有向普通扩展开放写入整体外观的能力。私有 settingsPrivate 接口不适用于普通扩展。
-- 静态 theme 包能着色 browser chrome，但临时加载的另一个主题会被 Edge 回收，不能稳定往返。网页 CSS 只能改变网页内容。
-- edge://settings/appearance 的 light 与 dark UI Automation 标识会真实改变 Edge 整体外观，不会写入 Windows 系统主题。
-- 该环境的 .NET socket 创建曾报 SocketException 10106，因此回环 TCP bridge 既不必要也不可靠。
+Edge 的普通扩展没有公开 API 可以直接写入设置页里的内置 browser.theme.color_scheme2 选项。chrome.debugger 对 edge://settings/appearance 也会被 Edge 拒绝，因此“无界面地模拟设置页点击”不是可依赖的扩展入口。
+
+公开的 chrome.management API 可以枚举并启用/停用主题。单个静态主题包在 Edge 中就是浏览器 chrome 的真实主题；停用这个主题后，Edge 会回到自己的内置外观。实验还证明同时加载两个主题并不能提供稳定的双主题切换：Edge 会回收先前的自定义主题。因此最终方案只保留一个深色主题，把“停用深色主题”定义为浅色状态。
 
 ## 交付架构
 
-1. packages/controller 是唯一需要固定到 Edge 工具栏的 MV3 扩展。点击 action 会通过 chrome.runtime.sendNativeMessage 向 com.crys74l.edge_browser_theme_toggle 发送一次 toggle 请求。
-2. Edge 按 Native Messaging 协议只为本次点击启动 packages/native-host。宿主从 stdin 读取一帧请求，向 stdout 写一帧结果，然后退出；没有端口、网络请求、Run 项或常驻进程。
-3. 宿主优先使用 Edge 传入的 parent-window 句柄锁定发起单击的窗口。它在同一 Edge 进程中创建一个单标签临时窗口，立即移到屏幕外；当前可见窗口的标签不会导航、替换、截图或拉伸。
-4. 临时窗口打开 edge://settings/appearance，读取已选 light 或 dark，选择相反模式并确认结果，然后关闭自身并把焦点还给原窗口。
-5. controller 只在 Native Messaging 返回 ok 加真实 mode 后更新 action 标题。快速连续点击被串行化，避免重叠的临时窗口。
+1. packages/controller 是 Manifest V3 的唯一工具栏控制器，只申请 management 权限，不申请 nativeMessaging、host 权限或内容脚本权限。
+2. packages/theme-dark 是 Manifest V2 无脚本深色主题，仅声明静态 theme.colors。
+3. 每次 action 点击都调用 chrome.management.getAll()，按固定显示名称 Edge 外观切换 - 深色主题 找到主题，因此不依赖安装时变化的扩展 ID。
+4. 若主题当前启用，调用 chrome.management.setEnabled(id, false)；若当前停用，调用 setEnabled(id, true)，随后用 chrome.management.get(id) 验证状态，再更新工具栏悬停标题。
+5. 点击操作通过 Promise 队列串行化，快速连续点击不会重叠或丢失状态。
 
-## 安全与副作用边界
+## 明确排除的方案
 
-- 不使用截图、覆盖层、透明窗、网页 CSS、静态 theme 包、回环 HTTP、代理、Windows 服务、计划任务或登录自启。
-- 常规成功和可安全清理失败都会关闭临时窗口。若无法确认它仍是同一进程的单标签窗口，宿主拒绝关闭不确定目标并报告失败，而不关闭用户窗口。
-- 宿主不结束或重启用户可见 Edge，也不更改 Windows 主题、Edge Preferences、代理或政策。
-- Native Messaging 的 stdin/stdout 是 Edge 与本机进程之间的一次性管道，不是网络连接。
+- Native Messaging、本机宿主、注册表清单与安装脚本；
+- 回环 TCP、代理、端口监听、后台常驻进程、登录自启；
+- 截图、窗口遮罩、临时窗口、屏幕外窗口与非等比拉伸；
+- 网页 CSS 注入、网页导航、打开或显示设置页；
+- 修改 Windows 主题、Edge Preferences、策略或用户标签页。
 
-## 本机集成与可逆性
+## 可见行为与错误语义
 
-安装脚本只管理以下精确对象：
+- 深色主题启用：工具栏标题为“Edge 当前为深色，单击切换为浅色”。
+- 深色主题停用：工具栏标题为“Edge 当前为浅色，单击切换为深色”。
+- 找不到主题：标题为“主题组件未加载：请加载深色主题包”，不伪报成功。
+- 管理 API 或状态确认失败：标题为“未更改 Edge 外观：请查看扩展错误详情”。
 
-- 运行文件：%LOCALAPPDATA%\CRYS74L\EdgeBrowserThemeToggle\NativeHost
-- Native Messaging 清单：%LOCALAPPDATA%\CRYS74L\EdgeBrowserThemeToggle\NativeHost\com.crys74l.edge_browser_theme_toggle.json
-- 用户级注册表项：HKCU\Software\Microsoft\Edge\NativeMessagingHosts\com.crys74l.edge_browser_theme_toggle，默认值为上述清单完整路径。
+该设计的浅色基准是 Edge 当前的内置外观。若用户另行安装并启用了其他自定义主题，停用本项目主题后的颜色由 Edge 自身决定；项目不承诺覆盖其他主题。
 
-卸载只在默认值仍等于本项目清单路径时移除这一项，并仅删除安装脚本允许列表中的运行文件。它不触碰 Windows 主题、Edge Preferences、政策、代理、其他扩展、当前 Edge 窗口或用户标签页。
+## 真实 Edge 证据
 
-## 验收证据
+在当前 Edge 139 中已经完成以下验证：
 
-当前 Edge 上已经完成四次真实工具栏点击：
+- 真实工具栏点击停用深色主题后，顶栏/标签栏回到浅色；再次点击启用后恢复深色。
+- 连续点击与服务工作进程重载后仍能往返。
+- 窗口边界没有变化，没有截图遮罩、设置页导航或拉伸。
+- Windows 主题值保持不变。
+- 新控制器不再调用 Native Messaging；缺少主题时只显示主题缺失提示。
 
-- 深色顶栏 RGB 32,32,32 与浅色顶栏 RGB 243,243,243 双向切换。
-- 第二次、第三次、第四次点击都在约两秒内完成，最终回到深色。
-- 目标 Edge 窗口边界始终不变，本机组件每次完成后都没有残留进程。
-- Windows AppsUseLightTheme 和 SystemUsesLightTheme 在前后完全相同。
+这些证据证明的是当前 Edge 版本和本项目主题包上的可行性，不把内部 API 推断成对任意第三方主题的保证。

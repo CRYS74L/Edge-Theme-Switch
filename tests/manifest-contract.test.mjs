@@ -11,12 +11,12 @@ async function readManifest(relativePath) {
   return JSON.parse(text);
 }
 
-test('控制扩展只获准调用 Edge Native Messaging，并提供唯一的无弹窗 action', async () => {
+test('控制扩展只获准管理主题，并提供唯一的无弹窗 action', async () => {
   const manifest = await readManifest('packages/controller/manifest.json');
 
   assert.equal(manifest.manifest_version, 3);
   assert.equal(manifest.name, 'Edge 浏览器外观切换');
-  assert.deepEqual(manifest.permissions, ['nativeMessaging']);
+  assert.deepEqual(manifest.permissions, ['management']);
   assert.equal(manifest.host_permissions, undefined);
   assert.equal(manifest.content_scripts, undefined);
   assert.equal(manifest.action.default_popup, undefined);
@@ -26,7 +26,7 @@ test('控制扩展只获准调用 Edge Native Messaging，并提供唯一的无�
   assert.equal(manifest.action.default_title, '单击切换 Edge 整体外观');
 });
 
-test('控制扩展使用事件驱动模块 worker，且固定 ID 可供 Native Messaging 精确授权', async () => {
+test('控制扩展使用事件驱动模块 worker，且不需要本机组件', async () => {
   const manifest = await readManifest('packages/controller/manifest.json');
 
   assert.deepEqual(manifest.background, {
@@ -40,6 +40,17 @@ test('控制扩展使用事件驱动模块 worker，且固定 ID 可供 Native M
     48: 'icons/icon-light-48.png',
     128: 'icons/icon-light-128.png',
   });
+});
+
+test('深色主题包是无脚本的浏览器主题', async () => {
+  const manifest = await readManifest('packages/theme-dark/manifest.json');
+
+  assert.equal(manifest.manifest_version, 2);
+  assert.equal(manifest.name, 'Edge 外观切换 - 深色主题');
+  assert.equal(manifest.type, undefined);
+  assert.equal(manifest.background, undefined);
+  assert.equal(manifest.permissions, undefined);
+  assert.ok(manifest.theme?.colors);
 });
 
 test('项目不再保留网页 CSS 注入实现', async () => {
