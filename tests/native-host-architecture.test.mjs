@@ -21,6 +21,8 @@ test('控制器只使用管理 API，不保留 Native Messaging 或网络桥接�
   assert.match(worker, /chrome\.management\.getAll/);
   assert.match(worker, /chrome\.management\.setEnabled/);
   assert.match(worker, /chrome\.management\.get/);
+  assert.match(worker, /chrome\.action\.setIcon/);
+  assert.match(worker, /onStartup/);
 });
 
 test('深色主题包是唯一的无脚本主题组件', async () => {

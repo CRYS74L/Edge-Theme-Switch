@@ -1,5 +1,20 @@
 export const DARK_THEME_NAME = 'Edge 外观切换 - 深色主题';
 
+export const ACTION_ICON_PATHS = Object.freeze({
+  light: Object.freeze({
+    16: 'icons/icon-light-16.png',
+    32: 'icons/icon-light-32.png',
+    48: 'icons/icon-light-48.png',
+    128: 'icons/icon-light-128.png',
+  }),
+  dark: Object.freeze({
+    16: 'icons/icon-dark-16.png',
+    32: 'icons/icon-dark-32.png',
+    48: 'icons/icon-dark-48.png',
+    128: 'icons/icon-dark-128.png',
+  }),
+});
+
 export const ACTION_TITLES = Object.freeze({
   initial: '单击切换 Edge 整体外观',
   busy: '正在切换 Edge 整体外观…',

@@ -6,7 +6,10 @@ const serviceWorkerUrl = new URL('../packages/controller/src/service-worker.mjs'
 function createFakeChrome(initialThemes) {
   const clickListeners = [];
   const titleCalls = [];
+  const iconCalls = [];
   const enabledCalls = [];
+  const startupListeners = [];
+  const installedListeners = [];
   const themes = initialThemes.map((theme) => ({ ...theme }));
 
   return {
@@ -14,6 +17,9 @@ function createFakeChrome(initialThemes) {
       action: {
         async setTitle(details) {
           titleCalls.push(details);
+        },
+        async setIcon(details) {
+          iconCalls.push(details);
         },
         onClicked: {
           addListener(listener) {
@@ -45,10 +51,28 @@ function createFakeChrome(initialThemes) {
           }
         },
       },
+      runtime: {
+        getURL(path) {
+          return path;
+        },
+        onStartup: {
+          addListener(listener) {
+            startupListeners.push(listener);
+          },
+        },
+        onInstalled: {
+          addListener(listener) {
+            installedListeners.push(listener);
+          },
+        },
+      },
     },
     clickListeners,
     titleCalls,
+    iconCalls,
     enabledCalls,
+    startupListeners,
+    installedListeners,
   };
 }
 
@@ -82,6 +106,14 @@ test('工具栏单击停用深色主题即可回到 Edge 内置浅色外观', as
     assert.deepEqual(fake.titleCalls.at(-1), {
       title: 'Edge 当前为浅色，单击切换为深色',
     });
+    assert.deepEqual(fake.iconCalls.at(-1), {
+      path: {
+        16: 'icons/icon-light-16.png',
+        32: 'icons/icon-light-32.png',
+        48: 'icons/icon-light-48.png',
+        128: 'icons/icon-light-128.png',
+      },
+    });
   });
 });
 
@@ -114,6 +146,36 @@ test('快速连续两次单击会串行启用和停用深色主题', async () =>
     ]);
     assert.deepEqual(fake.titleCalls.at(-1), {
       title: 'Edge 当前为浅色，单击切换为深色',
+    });
+    assert.deepEqual(fake.iconCalls.at(-1), {
+      path: {
+        16: 'icons/icon-light-16.png',
+        32: 'icons/icon-light-32.png',
+        48: 'icons/icon-light-48.png',
+        128: 'icons/icon-light-128.png',
+      },
+    });
+  });
+});
+
+test('Edge 启动时会按已启用的深色主题同步浅色线性图标', async () => {
+  const fake = createFakeChrome([
+    { id: 'edge-dark-theme', name: 'Edge 外观切换 - 深色主题', type: 'theme', enabled: true },
+  ]);
+
+  await withWorker(fake, 'startup-presentation', async () => {
+    await fake.startupListeners[0]();
+
+    assert.deepEqual(fake.iconCalls.at(-1), {
+      path: {
+        16: 'icons/icon-dark-16.png',
+        32: 'icons/icon-dark-32.png',
+        48: 'icons/icon-dark-48.png',
+        128: 'icons/icon-dark-128.png',
+      },
+    });
+    assert.deepEqual(fake.titleCalls.at(-1), {
+      title: 'Edge 当前为深色，单击切换为浅色',
     });
   });
 });

@@ -49,42 +49,23 @@ function New-ActionIcon {
 
         $center = [single](($Size - 1) / 2)
 
-        if ($Mode -eq 'light') {
-            $radius = [single]($Size * 0.205)
-            $diameter = [single](2 * $radius)
-            $graphics.DrawEllipse($pen, [single]($center - $radius), [single]($center - $radius), $diameter, $diameter)
+        $radius = [single]($Size * 0.205)
+        $diameter = [single](2 * $radius)
+        $graphics.DrawEllipse($pen, [single]($center - $radius), [single]($center - $radius), $diameter, $diameter)
 
-            $rayStart = [single]($radius + ($stroke * 1.6))
-            $rayEnd = [single]($Size * 0.44)
-            foreach ($angle in 0, 45, 90, 135, 180, 225, 270, 315) {
-                $radians = [Math]::PI * $angle / 180
-                $cosine = [Math]::Cos($radians)
-                $sine = [Math]::Sin($radians)
-                $graphics.DrawLine(
-                    $pen,
-                    [single]($center + ($cosine * $rayStart)),
-                    [single]($center + ($sine * $rayStart)),
-                    [single]($center + ($cosine * $rayEnd)),
-                    [single]($center + ($sine * $rayEnd))
-                )
-            }
-        }
-        else {
-            $path = [System.Drawing.Drawing2D.GraphicsPath]::new()
-            $path.AddBezier(
-                [single]($Size * 0.66), [single]($Size * 0.12),
-                [single]($Size * 0.19), [single]($Size * 0.22),
-                [single]($Size * 0.13), [single]($Size * 0.73),
-                [single]($Size * 0.66), [single]($Size * 0.88)
+        $rayStart = [single]($radius + ($stroke * 1.6))
+        $rayEnd = [single]($Size * 0.44)
+        foreach ($angle in 0, 45, 90, 135, 180, 225, 270, 315) {
+            $radians = [Math]::PI * $angle / 180
+            $cosine = [Math]::Cos($radians)
+            $sine = [Math]::Sin($radians)
+            $graphics.DrawLine(
+                $pen,
+                [single]($center + ($cosine * $rayStart)),
+                [single]($center + ($sine * $rayStart)),
+                [single]($center + ($cosine * $rayEnd)),
+                [single]($center + ($sine * $rayEnd))
             )
-            $path.AddBezier(
-                [single]($Size * 0.66), [single]($Size * 0.88),
-                [single]($Size * 0.42), [single]($Size * 0.75),
-                [single]($Size * 0.35), [single]($Size * 0.34),
-                [single]($Size * 0.66), [single]($Size * 0.12)
-            )
-            $path.CloseFigure()
-            $graphics.DrawPath($pen, $path)
         }
 
         $bitmap.Save($OutputPath, [System.Drawing.Imaging.ImageFormat]::Png)

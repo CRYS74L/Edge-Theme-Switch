@@ -1,4 +1,5 @@
 import {
+  ACTION_ICON_PATHS,
   ACTION_TITLES,
   DARK_THEME_NAME,
 } from './constants.mjs';
@@ -25,8 +26,19 @@ function findDarkTheme(themes) {
   ));
 }
 
+function resolveActionIconPaths(mode) {
+  return Object.fromEntries(
+    Object.entries(ACTION_ICON_PATHS[mode]).map(([size, path]) => (
+      [size, chrome.runtime.getURL(path)]
+    )),
+  );
+}
+
 async function setActionPresentation(mode) {
-  await chrome.action.setTitle({ title: ACTION_TITLES[mode] });
+  await Promise.all([
+    chrome.action.setTitle({ title: ACTION_TITLES[mode] }),
+    chrome.action.setIcon({ path: resolveActionIconPaths(mode) }),
+  ]);
 }
 
 async function setActionFailure(error) {
@@ -43,6 +55,17 @@ async function getDarkTheme() {
     throw new ThemeAvailabilityError();
   }
   return dark;
+}
+
+async function synchronizeActionPresentation() {
+  try {
+    const dark = await getDarkTheme();
+    await setActionPresentation(dark.enabled ? 'dark' : 'light');
+  }
+  catch (error) {
+    console.error('Edge 外观状态同步失败。', error);
+    await setActionFailure(error);
+  }
 }
 
 async function setDarkThemeEnabled(theme, enabled) {
@@ -68,4 +91,6 @@ async function performToggle() {
   }
 }
 
+chrome.runtime?.onStartup?.addListener(() => enqueue(synchronizeActionPresentation));
+chrome.runtime?.onInstalled?.addListener(() => enqueue(synchronizeActionPresentation));
 chrome.action.onClicked.addListener(() => enqueue(performToggle));
