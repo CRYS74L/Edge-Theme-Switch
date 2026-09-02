@@ -34,12 +34,12 @@ function New-ActionIcon {
         $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
         $graphics.Clear([System.Drawing.Color]::Transparent)
 
-        $stroke = [single][Math]::Max(1.4, $Size / 12)
+        $stroke = [single][Math]::Max(1.5, $Size / 11)
         $lineColor = if ($Mode -eq 'light') {
-            [System.Drawing.Color]::FromArgb(15, 23, 42)
+            [System.Drawing.Color]::FromArgb(0, 0, 0)
         }
         else {
-            [System.Drawing.Color]::FromArgb(248, 250, 252)
+            [System.Drawing.Color]::FromArgb(245, 245, 245)
         }
 
         $pen = [System.Drawing.Pen]::new($lineColor, $stroke)

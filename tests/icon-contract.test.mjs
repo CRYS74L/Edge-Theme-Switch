@@ -120,6 +120,30 @@ test('浅色和深色太阳素材保持相同几何形状，只改变线条颜�
         `${size}px 浅色和深色图标的透明度轮廓必须一致`,
       );
       if (lightImage.rgba[index] >= 128) {
+        assert.equal(
+          lightImage.rgba[index - 3],
+          lightImage.rgba[index - 2],
+          `${size}px 浅色太阳线条必须使用中性色，不得带色偏`,
+        );
+        assert.equal(
+          lightImage.rgba[index - 2],
+          lightImage.rgba[index - 1],
+          `${size}px 浅色太阳线条必须使用中性色，不得带色偏`,
+        );
+        assert.equal(
+          darkImage.rgba[index - 3],
+          darkImage.rgba[index - 2],
+          `${size}px 深色太阳线条必须使用中性色，不得带色偏`,
+        );
+        assert.equal(
+          darkImage.rgba[index - 2],
+          darkImage.rgba[index - 1],
+          `${size}px 深色太阳线条必须使用中性色，不得带色偏`,
+        );
+        if (lightImage.rgba[index] === 255) {
+          assert.equal(lightImage.rgba[index - 3], 0, `${size}px 浅色太阳不透明核心必须是纯黑`);
+          assert.equal(darkImage.rgba[index - 3], 245, `${size}px 深色太阳不透明核心必须是亮灰 #f5f5f5`);
+        }
         const lightLuma = lightImage.rgba[index - 3] + lightImage.rgba[index - 2] + lightImage.rgba[index - 1];
         const darkLuma = darkImage.rgba[index - 3] + darkImage.rgba[index - 2] + darkImage.rgba[index - 1];
         assert.ok(lightLuma < 300, `${size}px 浅色状态应使用深色线条`);
