@@ -49,6 +49,8 @@ HKCU\Software\Microsoft\Edge\NativeMessagingHosts\com.crys74l.edge_browser_theme
 
 如果之前加载过旧的 theme-light、theme-dark 或网页 CSS 方案，应先移除它们，避免它们覆盖浏览器外观。安装本机组件后，已加载的 controller 可在 edge://extensions 中点“重新加载”一次。
 
+如果安装脚本执行时 Edge 已经打开，而按钮仍提示“本机组件不可用”，这是 Edge 进程缓存了安装前的 Native Messaging 清单。不要重复安装主题包：在**当前 Edge**地址栏输入 `edge://restart` 并回车，让当前 Edge 完整重新初始化一次；恢复后再点扩展图标即可。这个重启只是在安装宿主后的首次初始化，后续每次切换都不需要重启 Edge，也不会打开设置页。
+
 ## 卸载
 
 先在 Edge 中移除 controller，然后执行：
