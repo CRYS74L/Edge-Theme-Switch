@@ -1,50 +1,59 @@
 # Edge 浏览器整体外观一键切换
 
-这是一个只针对当前 Microsoft Edge 浏览器界面的开发者模式扩展。固定扩展图标后，单击一次即可在 Edge 的深色和内置浅色外观之间切换；变化包括顶栏、标签栏、工具栏、地址栏以及 Edge 自己的内置页面，不会反色网页内容，也不会修改 Windows 系统主题。
+这是一个只操作当前 Microsoft Edge 窗口的开发者模式扩展。单击固定到工具栏的图标，即可在 Edge 自身的浅色和深色整体外观之间往返；网页内容、Windows 系统主题和其他应用不受影响。
 
-## 最终实现
+## 为什么改为本机消息方案
 
-项目由两个解压缩扩展组成：
+旧版通过 `chrome.management` 停用唯一的深色主题包来回到浅色。实测 Edge 139 在停用这个解压缩主题后会把主题从管理列表中移除，因此下一次点击找不到主题，形成“深色可以切到浅色、浅色无法切回深色”的故障。
 
-1. `packages/controller`：Manifest V3 工具栏控制器，只申请 `management` 权限。
-2. `packages/theme-dark`：一个无脚本的 Manifest V2 深色主题包。
+当前版本直接操作 Edge 设置页中的“外观”单选项，不再依赖任何颜色主题包。扩展创建一个普通的 `about:blank` 临时标签；本机宿主通过 Edge 应用菜单打开设置和外观页，选择目标项并确认 UI 状态，完成后删除临时标签并恢复原标签。
 
-控制器每次点击都通过 `chrome.management.getAll()` 按名称找到深色主题，再调用 `chrome.management.setEnabled(themeId, enabled)`。启用主题就是深色外观，停用主题会回到 Edge 的内置浅色外观。主题 ID 不写死，因此 Edge 重启、服务工作进程回收或扩展重新加载后都能重新发现它。
+## 项目组成
 
-控制器同时同步工具栏图标：浅色外观使用深色太阳线性图标 `icon-light-*`，深色外观使用浅色太阳线性图标 `icon-dark-*`；两个状态的图形都是太阳，只改变线条颜色。Edge 启动、扩展安装、服务工作进程重载和每次切换都会按当前主题状态同步，不会在深色浏览器中继续显示深色图标。
+1. `packages/controller`：Manifest V3 工具栏控制器，申请 `nativeMessaging` 和 `storage` 权限。
+2. `packages/native-host`：.NET 7 WPF Native Messaging 宿主，使用 Windows UI Automation 操作现有 Edge 窗口。
+3. `scripts/install-native-host.ps1`：发布宿主、生成清单并注册当前用户级 Native Messaging 主机。
+4. `packages/theme-dark`：旧版静态主题源码，仅保留作历史兼容参考，不是当前版本的安装依赖。
 
-太阳素材使用纯黑 `[0, 0, 0]` 与中性亮灰 `[245, 245, 245]`，所有尺寸按统一的 `max(1.15px, size / 14)` 笔宽生成；圆圈进一步放大至 `size × 0.225`，射线端点收短至 `size × 0.415`，保持与 Edge 线性工具栏图标一致的重量与比例。
-
-深色主题包在 `theme.colors.toolbar_button_icon` 统一声明高对比工具栏图标色 `[245, 245, 245]`。这是 Edge 主题级颜色映射，会同时作用于返回、刷新、扩展、分屏、收藏夹、历史记录、下载等工具栏按钮及其悬停/按下状态，不通过脚本逐个改按钮，也不修改网页内容。
-
-这条实现路径不包含 Native Messaging、本机组件、注册表、代理、回环端口、截图遮罩、后台常驻进程或设置页导航。因此重启 Edge 后不会再查找“本机组件”，也不需要再次输入任何指令。项目有意只安装一个深色主题：Edge 同时只保留一个自定义主题，停用它正好恢复内置浅色状态。
+宿主不创建 Edge 窗口、不修改窗口尺寸、不注入网页 CSS、不监听网络、不运行回环端口，也不常驻后台。扩展连续点击通过 Promise 队列串行化。
 
 ## 安装到当前 Edge
 
-只在你正在使用的 Edge 中操作：
-
 1. 打开 `edge://extensions`，开启“开发人员模式”。
 2. 点击“加载解压缩的扩展”，选择项目中的 `packages/controller` 文件夹。
-3. 再次点击“加载解压缩的扩展”，选择项目中的 `packages/theme-dark` 文件夹。
+3. 在项目根目录运行：
+
+   ```powershell
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-native-host.ps1 -Configuration Release
+   ```
+
 4. 将“Edge 浏览器外观切换”固定到工具栏。
-5. 单击工具栏图标测试深色和浅色往返切换。
+5. 单击图标测试浅色→深色→浅色往返。
 
-不要加载 `theme-light`，也不要运行旧版 `install-native-host.ps1`；最终版本已经不需要这些文件。若 Edge 中还留有旧版控制器或旧主题，先在 `edge://extensions` 移除，再按上面两个目录重新加载一次。
+脚本只写入当前用户注册表的以下宿主键：
 
-开发者模式扩展和主题会随 Edge 配置保留。以后重启 Edge 后直接点击图标即可，不需要 `edge://restart`、命令行、本机服务或设置页。
+`HKCU\Software\Google\Chrome\NativeMessagingHosts\com.crys74l.edge_browser_theme_toggle`
+
+这是当前本机 Edge 139 实测能识别的 Chromium/Chrome 兼容回退根；清单中的 `allowed_origins` 固定为当前解压缩控制器 ID。脚本不会写入 `HKLM`，也不会覆盖其他 Native Messaging 主机。
+
+当前版本不需要加载 `packages/theme-dark`。如果 Edge 中仍显示旧版“Edge 外观切换 - 深色主题”，可在 `edge://extensions` 中只移除这个旧主题；不要为本扩展重复安装多个颜色主题。
 
 ## 状态提示
 
-- `Edge 当前为深色，单击切换为浅色`：深色主题已启用。
-- `Edge 当前为浅色，单击切换为深色`：深色主题已停用。
-- `主题组件未加载：请加载深色主题包`：仅表示 `packages/theme-dark` 未安装或已被移除。
-- `未更改 Edge 外观：请查看扩展错误详情`：Edge 管理 API 返回了异常；不会伪报成功，也不会回退到本机组件。
-
-如果用户自行安装了其他自定义主题，Edge 的浅色基准可能由该主题决定；本项目的契约是“启用本项目深色主题 / 停用后回到 Edge 当前的内置外观”。
+- `Edge 当前为浅色，单击切换为深色`：本次切换已确认进入浅色外观。
+- `Edge 当前为深色，单击切换为浅色`：本次切换已确认进入深色外观。
+- `本机切换组件不可用：请运行一次安装脚本`：宿主未注册或无法启动。
+- `未更改 Edge 外观：请查看扩展错误详情`：Edge 外观控件没有确认目标状态。
 
 ## 卸载
 
-在当前 Edge 的 `edge://extensions` 中移除“Edge 浏览器外观切换”和“Edge 外观切换 - 深色主题”即可。最终版本没有注册表项、安装器或后台进程，不需要额外清理。
+在 `edge://extensions` 中移除控制器。随后如需移除本机宿主，运行：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-native-host.ps1 -Uninstall
+```
+
+该开关只移除本项目当前用户宿主键和脚本生成的 `.native-host` 文件，不触碰其他主机、主题或 Edge 数据。
 
 ## 验证
 
@@ -52,24 +61,14 @@
 
 ```powershell
 npm test
+dotnet build .\packages\native-host\EdgeBrowserThemeToggle.NativeHost.csproj --configuration Release --runtime win-x64 --self-contained false --nologo
 git diff --check
 ```
 
-端到端验收应确认：
+真实 Edge 验收应确认：
 
-- 顶栏、标签栏和地址栏本身发生深浅变化，而不是网页 CSS 变化；
-- 深色主题下工具栏图标相对 `[32, 32, 32]` 背景保持高对比亮色；
-- 连续点击多次都能往返；
-- 重新加载控制器服务工作进程后仍能往返；
-- 重启 Edge 后无需重新注册或输入指令；
-- Windows 主题设置、当前 Edge 窗口尺寸和已有标签页不被修改；
-- 没有 `EdgeBrowserThemeToggle.NativeHost.exe` 或其他桥接进程。
-
-## 项目结构
-
-| 路径 | 作用 |
-| --- | --- |
-| `packages/controller` | 唯一的 MV3 工具栏控制器。 |
-| `packages/theme-dark` | 唯一的无脚本深色浏览器主题。 |
-| `tests` | 管理 API、清单、架构和图标契约测试。 |
-| `scripts/generate-icons.ps1` | 重新生成控制器图标的开发脚本。 |
+- 工具栏 action 可以完成浅色→深色→浅色往返；
+- 临时设置标签在切换后消失，原活动标签恢复；
+- Edge 设置页的 `light`/`dark` 控件确认了目标状态；
+- `edge://extensions` 不新增错误记录；
+- Windows 主题、窗口尺寸和网页内容不变。
