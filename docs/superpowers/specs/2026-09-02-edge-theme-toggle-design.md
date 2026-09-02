@@ -17,7 +17,7 @@ Edge 的普通扩展没有公开 API 可以直接写入设置页里的内置 bro
 3. 每次 action 点击都调用 chrome.management.getAll()，按固定显示名称 Edge 外观切换 - 深色主题 找到主题，因此不依赖安装时变化的扩展 ID。
 4. 若主题当前启用，调用 chrome.management.setEnabled(id, false)；若当前停用，调用 setEnabled(id, true)，随后用 chrome.management.get(id) 验证状态，再更新工具栏悬停标题。
 5. 点击操作通过 Promise 队列串行化，快速连续点击不会重叠或丢失状态。
-6. controller 在 Edge 启动、扩展安装和每次切换后同步 action 图标：两个状态都使用太阳线性图形，浅色状态为纯黑线条，深色状态为中性亮灰线条；各尺寸统一使用 `max(1.5px, size / 11)` 笔宽。
+6. controller 在 Edge 启动、扩展安装和每次切换后同步 action 图标：两个状态都使用太阳线性图形，浅色状态为纯黑线条，深色状态为中性亮灰线条；各尺寸统一使用 `max(1.4px, size / 12)` 笔宽。
 7. 深色主题在 `theme.colors.toolbar_button_icon` 统一提供 `[245, 245, 245]` 高对比图标色，由 Edge 主题系统应用到工具栏按钮及悬停/按下状态，不注入网页样式或逐个覆盖按钮。
 
 ## 明确排除的方案

@@ -34,7 +34,7 @@ function New-ActionIcon {
         $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
         $graphics.Clear([System.Drawing.Color]::Transparent)
 
-        $stroke = [single][Math]::Max(1.5, $Size / 11)
+        $stroke = [single][Math]::Max(1.4, $Size / 12)
         $lineColor = if ($Mode -eq 'light') {
             [System.Drawing.Color]::FromArgb(0, 0, 0)
         }
