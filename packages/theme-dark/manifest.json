@@ -2,6 +2,7 @@
   "manifest_version": 2,
   "name": "Edge 外观切换 - 深色主题",
   "version": "1.0.0",
+  "update_url": "https://edge.microsoft.com/extensionwebstorebase/v1/crx",
   "description": "Edge 浏览器外观切换的深色主题组件。",
   "theme": {
     "colors": {
