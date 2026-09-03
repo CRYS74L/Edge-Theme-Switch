@@ -23,7 +23,7 @@ test('控制扩展只获准管理主题，并提供唯一的无弹窗 action', a
   assert.equal(manifest.options_page, undefined);
   assert.equal(manifest.options_ui, undefined);
   assert.equal(manifest.side_panel, undefined);
-  assert.equal(manifest.action.default_title, '单击切换 Edge 整体外观');
+  assert.equal(manifest.action.default_title, '切换模式');
 });
 
 test('控制扩展使用事件驱动模块 worker，且不需要本机组件', async () => {

@@ -104,7 +104,7 @@ test('工具栏单击停用深色主题即可回到 Edge 内置浅色外观', as
 
     assert.deepEqual(fake.enabledCalls, [{ id: 'edge-dark-theme', enabled: false }]);
     assert.deepEqual(fake.titleCalls.at(-1), {
-      title: 'Edge 当前为浅色，单击切换为深色',
+      title: '深色模式',
     });
     assert.deepEqual(fake.iconCalls.at(-1), {
       path: {
@@ -145,7 +145,7 @@ test('快速连续两次单击会串行启用和停用深色主题', async () =>
       { id: 'edge-dark-theme', enabled: false },
     ]);
     assert.deepEqual(fake.titleCalls.at(-1), {
-      title: 'Edge 当前为浅色，单击切换为深色',
+      title: '深色模式',
     });
     assert.deepEqual(fake.iconCalls.at(-1), {
       path: {
@@ -175,7 +175,7 @@ test('Edge 启动时会按已启用的深色主题同步浅色线性图标', asy
       },
     });
     assert.deepEqual(fake.titleCalls.at(-1), {
-      title: 'Edge 当前为深色，单击切换为浅色',
+      title: '浅色模式',
     });
   });
 });
@@ -194,6 +194,30 @@ test('深色主题包未加载时不会谎称 Edge 已切换', async () => {
       assert.deepEqual(fake.enabledCalls, []);
       assert.deepEqual(fake.titleCalls.at(-1), {
         title: '主题组件未加载：请加载深色主题包',
+      });
+    });
+  }
+  finally {
+    console.error = originalConsoleError;
+  }
+});
+
+test('管理 API 失败时仍显示完整错误提示', async () => {
+  const fake = createFakeChrome([
+    { id: 'edge-dark-theme', name: 'Edge 外观切换 - 深色主题', type: 'theme', enabled: true },
+  ]);
+  fake.chrome.management.setEnabled = async () => {
+    throw new Error('management failure');
+  };
+  const originalConsoleError = console.error;
+  console.error = () => {};
+
+  try {
+    await withWorker(fake, 'management-failure', async () => {
+      await fake.clickListeners[0]();
+
+      assert.deepEqual(fake.titleCalls.at(-1), {
+        title: '未更改 Edge 外观：请查看扩展错误详情',
       });
     });
   }

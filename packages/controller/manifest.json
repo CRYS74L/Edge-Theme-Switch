@@ -12,7 +12,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "单击切换 Edge 整体外观",
+    "default_title": "切换模式",
     "default_icon": {
       "16": "icons/icon-light-16.png",
       "32": "icons/icon-light-32.png",
