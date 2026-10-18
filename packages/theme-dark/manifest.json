@@ -1,31 +1,31 @@
 {
   "manifest_version": 2,
   "name": "Edge 外观切换 - 深色主题",
-  "version": "1.0.0.3",
-  "version_name": "1.0.1-dev.3-preview",
+  "version": "1.0.0.4",
+  "version_name": "1.0.1-dev.4-preview",
   "update_url": "https://edge.microsoft.com/extensionwebstorebase/v1/crx",
   "description": "Edge 浏览器外观切换的深色主题组件。",
   "theme": {
     "images": {
-      "theme_toolbar": "frame-dark.png",
+      "theme_toolbar": "toolbar-gray.png",
       "theme_frame": "frame-dark.png",
       "theme_frame_inactive": "frame-dark.png",
-      "theme_tab_background": "frame-dark.png",
-      "theme_tab_background_inactive": "frame-dark.png"
+      "theme_tab_background": "toolbar-gray.png",
+      "theme_tab_background_inactive": "toolbar-gray.png"
     },
     "colors": {
-      "frame": [255, 255, 255],
-      "frame_inactive": [255, 255, 255],
-      "background_tab": [255, 255, 255],
-      "background_tab_inactive": [255, 255, 255],
-      "toolbar": [255, 255, 255],
+      "frame": [32, 32, 32],
+      "frame_inactive": [32, 32, 32],
+      "background_tab": [59, 59, 59],
+      "background_tab_inactive": [59, 59, 59],
+      "toolbar": [59, 59, 59],
       "toolbar_button_icon": [245, 245, 245],
       "bookmark_text": [245, 245, 245],
       "ntp_text": [245, 245, 245],
       "ntp_link": [140, 190, 255],
       "ntp_section": [48, 48, 48],
       "button_background": [32, 32, 32],
-      "omnibox_background": [48, 48, 48],
+      "omnibox_background": [41, 41, 41],
       "omnibox_text": [245, 245, 245]
     }
   }
