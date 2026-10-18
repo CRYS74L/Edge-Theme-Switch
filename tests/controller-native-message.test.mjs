@@ -79,12 +79,12 @@ function createFakeChrome(initialThemes) {
   };
 }
 
-async function withWorker(fake, marker, operation) {
+async function withWorker(fake, marker, operation, workerUrl = serviceWorkerUrl) {
   const originalChrome = globalThis.chrome;
   globalThis.chrome = fake.chrome;
 
   try {
-    await import(`${serviceWorkerUrl}?${marker}=${Date.now()}`);
+    await import(`${workerUrl}?${marker}=${Date.now()}`);
     await operation();
   }
   finally {
@@ -96,6 +96,68 @@ async function withWorker(fake, marker, operation) {
     }
   }
 }
+
+test('纯手动入口不需要页面API，连续点击可切换深浅且不自动切换', async () => {
+  const fake = createFakeChrome([
+    { id: 'edge-dark-theme', name: 'Edge 外观切换 - 深色主题', type: 'theme', enabled: false },
+  ]);
+  const manualUrl = new URL('../packages/controller/src/manual-worker.mjs', import.meta.url).href;
+  await withWorker(fake, 'manual-only', async () => {
+    await fake.startupListeners[0]();
+    assert.deepEqual(fake.enabledCalls, []);
+    await Promise.all([fake.clickListeners[0](), fake.clickListeners[0]()]);
+    assert.deepEqual(fake.enabledCalls, [
+      { id: 'edge-dark-theme', enabled: true }, { id: 'edge-dark-theme', enabled: false },
+    ]);
+    assert.equal(fake.titleCalls.at(-1).title, '深色模式');
+    assert.equal(fake.iconCalls.at(-1).path[16], 'icons/icon-light-16.png');
+  }, manualUrl);
+});
+
+test('手动版图标更新挂起不阻塞下一次点击，最终图标与实际主题一致', async () => {
+  const fake = createFakeChrome([
+    { id: 'edge-dark-theme', name: 'Edge 外观切换 - 深色主题', type: 'theme', enabled: false },
+  ]);
+  const manualUrl = new URL('../packages/controller/src/manual-worker.mjs', import.meta.url).href;
+  let release; let hold = true;
+  await withWorker(fake, 'manual-slow-icon', async () => {
+    await fake.startupListeners[0]();
+    const setIcon = fake.chrome.action.setIcon;
+    fake.chrome.action.setIcon = async value => {
+      if (hold) await new Promise(resolve => { release = resolve; });
+      await setIcon(value);
+    };
+    const first = fake.clickListeners[0](); await new Promise(setImmediate);
+    const second = fake.clickListeners[0](); await new Promise(setImmediate);
+    try {
+      assert.deepEqual(fake.enabledCalls.map(value => value.enabled), [true, false]);
+    }
+    finally { hold = false; release?.(); await Promise.all([first, second]); }
+    assert.equal(fake.iconCalls.at(-1).path[16], 'icons/icon-light-16.png');
+  }, manualUrl);
+});
+
+test('手动版主题缺失和状态回读失败均显示错误，不伪报切换成功', async () => {
+  const manualUrl = new URL('../packages/controller/src/manual-worker.mjs', import.meta.url).href;
+  const oldError = console.error; console.error = () => {};
+  try {
+    const missing = createFakeChrome([]);
+    await withWorker(missing, 'manual-missing', async () => {
+      await missing.clickListeners[0]();
+      assert.deepEqual(missing.enabledCalls, []);
+      assert.equal(missing.titleCalls.at(-1).title, '主题组件未加载：请加载深色主题包');
+    }, manualUrl);
+    const failed = createFakeChrome([
+      { id: 'edge-dark-theme', name: 'Edge 外观切换 - 深色主题', type: 'theme', enabled: false },
+    ]);
+    failed.chrome.management.setEnabled = async () => {};
+    await withWorker(failed, 'manual-readback-failed', async () => {
+      await failed.clickListeners[0]();
+      assert.equal(failed.titleCalls.at(-1).title, '未更改 Edge 外观：请查看扩展错误详情');
+    }, manualUrl);
+  }
+  finally { console.error = oldError; }
+});
 
 test('工具栏单击停用深色主题即可回到 Edge 内置浅色外观', async () => {
   const fake = createFakeChrome([
