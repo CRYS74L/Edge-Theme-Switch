@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Edge 浏览器外观切换",
-  "version": "1.0.0.4",
-  "version_name": "1.0.1-dev.4-preview",
+  "version": "1.0.0.5",
+  "version_name": "1.0.1-dev.5-preview",
   "description": "单击工具栏图标即可在当前 Edge 的浅色和深色整体外观之间切换；不修改 Windows 主题或网页内容。",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApiJO/1SneyUezP9SuBEp3zz+pRoN26o1/A27IkfvI36o78XWdUioiB1l6AVMd2eptQRSt3SLxJ7jfWjiP34Qwyuc4ZOs0iLJYiHg+UOvekwtk0q9UAeu8IpgOAAsqHrXpI7SI7BUzkt8DAhif0oyErpF2wTLDSL8fSAcWIX3to5bZBx8Ph2hW5NHwkOuvvbooGR8bHU3gaYWmIy/BzohICgyXI2GbyPUqdFZi2u7pGbW7eiEQvVYTvLoLNdtY8OljmM2PpyGNjrC4LUAkpa3BrgLh7/RNpljRan3PRk7yHQjU8V7fr7tJgVaRxoJEJvh7wdHfb0LVyISY+pyaF8WWQIDAQAB",
   "permissions": [

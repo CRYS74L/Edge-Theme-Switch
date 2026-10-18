@@ -1,8 +1,8 @@
 {
   "manifest_version": 2,
   "name": "Edge 外观切换 - 深色主题",
-  "version": "1.0.0.4",
-  "version_name": "1.0.1-dev.4-preview",
+  "version": "1.0.0.5",
+  "version_name": "1.0.1-dev.5-preview",
   "update_url": "https://edge.microsoft.com/extensionwebstorebase/v1/crx",
   "description": "Edge 浏览器外观切换的深色主题组件。",
   "theme": {
@@ -10,6 +10,8 @@
       "theme_toolbar": "toolbar-gray.png",
       "theme_frame": "frame-dark.png",
       "theme_frame_inactive": "frame-dark.png",
+      "theme_frame_overlay": "titlebar-dark.png",
+      "theme_frame_overlay_inactive": "titlebar-dark.png",
       "theme_tab_background": "toolbar-gray.png",
       "theme_tab_background_inactive": "toolbar-gray.png"
     },
@@ -24,7 +26,7 @@
       "ntp_text": [245, 245, 245],
       "ntp_link": [140, 190, 255],
       "ntp_section": [48, 48, 48],
-      "button_background": [32, 32, 32],
+      "button_background": [0, 0, 0, 0],
       "omnibox_background": [41, 41, 41],
       "omnibox_text": [245, 245, 245]
     }
