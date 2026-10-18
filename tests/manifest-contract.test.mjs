@@ -11,14 +11,17 @@ async function readManifest(relativePath) {
   return JSON.parse(text);
 }
 
-test('控制扩展只获准管理主题，并提供唯一的无弹窗 action', async () => {
+test('控制扩展仅对指定视频网站检测状态，并保留无弹窗 action', async () => {
   const manifest = await readManifest('packages/controller/manifest.json');
 
   assert.equal(manifest.manifest_version, 3);
   assert.equal(manifest.name, 'Edge 浏览器外观切换');
-  assert.deepEqual(manifest.permissions, ['management']);
-  assert.equal(manifest.host_permissions, undefined);
-  assert.equal(manifest.content_scripts, undefined);
+  assert.deepEqual(manifest.permissions, ['management', 'storage', 'scripting']);
+  assert.deepEqual(manifest.host_permissions, ['https://www.bilibili.com/*', 'https://live.bilibili.com/*', 'https://www.youtube.com/*', 'https://youtube.com/*']);
+  assert.deepEqual(manifest.content_scripts[0].js, ['src/watch-state.js']);
+  assert.equal(manifest.content_scripts[0].run_at, 'document_idle');
+  assert.equal(manifest.content_scripts[0].all_frames, undefined);
+  assert.equal(manifest.content_scripts[0].matches.length, 4);
   assert.equal(manifest.action.default_popup, undefined);
   assert.equal(manifest.options_page, undefined);
   assert.equal(manifest.options_ui, undefined);

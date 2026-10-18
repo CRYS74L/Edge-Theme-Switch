@@ -1,12 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Edge 浏览器外观切换",
-  "version": "1.0.0.5",
-  "version_name": "1.0.1-dev.5-preview",
-  "description": "单击工具栏图标即可在当前 Edge 的浅色和深色整体外观之间切换；不修改 Windows 主题或网页内容。",
+  "version": "1.1.0.1",
+  "version_name": "1.1.0-dev.1-preview",
+  "description": "手动切换 Edge 外观；B站网页全屏、直播间及 YouTube 影院模式自动进入深色，离开时仅撤销自动切换。",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApiJO/1SneyUezP9SuBEp3zz+pRoN26o1/A27IkfvI36o78XWdUioiB1l6AVMd2eptQRSt3SLxJ7jfWjiP34Qwyuc4ZOs0iLJYiHg+UOvekwtk0q9UAeu8IpgOAAsqHrXpI7SI7BUzkt8DAhif0oyErpF2wTLDSL8fSAcWIX3to5bZBx8Ph2hW5NHwkOuvvbooGR8bHU3gaYWmIy/BzohICgyXI2GbyPUqdFZi2u7pGbW7eiEQvVYTvLoLNdtY8OljmM2PpyGNjrC4LUAkpa3BrgLh7/RNpljRan3PRk7yHQjU8V7fr7tJgVaRxoJEJvh7wdHfb0LVyISY+pyaF8WWQIDAQAB",
   "permissions": [
-    "management"
+    "management",
+    "storage",
+    "scripting"
   ],
   "background": {
     "service_worker": "src/service-worker.mjs",
@@ -20,5 +22,25 @@
       "48": "icons/icon-light-48.png",
       "128": "icons/icon-light-128.png"
     }
-  }
+  },
+  "host_permissions": [
+    "https://www.bilibili.com/*",
+    "https://live.bilibili.com/*",
+    "https://www.youtube.com/*",
+    "https://youtube.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.bilibili.com/video/*",
+        "https://live.bilibili.com/*",
+        "https://www.youtube.com/*",
+        "https://youtube.com/*"
+      ],
+      "js": [
+        "src/watch-state.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
 }
