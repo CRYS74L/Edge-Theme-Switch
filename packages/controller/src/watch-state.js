@@ -5,7 +5,10 @@
   let episode = 0;
   let previousKey = '';
   let previousReport = '';
-  let timer;
+  let scheduled = false;
+  let observedPlayer;
+  let boundUrl = '';
+  let needsPlayer = false;
   let disconnected = false;
 
   function sample() {
@@ -28,39 +31,57 @@
     return { type: 'edge-theme-watch-state', immersive, episode: `${pageToken}:${episode}` };
   }
   function report() {
-    timer = undefined;
+    scheduled = false;
     if (disconnected) return;
     const state = sample();
     const serialized = JSON.stringify(state);
     if (serialized === previousReport) return;
     previousReport = serialized;
     try {
-      chrome.runtime.sendMessage(state).catch(() => { disconnected = true; observer.disconnect(); });
+      chrome.runtime.sendMessage({ ...state, sentAt: Date.now() }).catch(() => { disconnected = true; observer.disconnect(); treeObserver.disconnect(); });
     }
-    catch { disconnected = true; observer.disconnect(); }
+    catch { disconnected = true; observer.disconnect(); treeObserver.disconnect(); }
   }
   function schedule() {
-    if (timer === undefined && !disconnected) timer = setTimeout(report, 80);
+    if (!scheduled && !disconnected) { scheduled = true; queueMicrotask(report); }
   }
   const observer = new MutationObserver(schedule);
-  observer.observe(document.documentElement, {
-    subtree: true, childList: true, attributes: true,
-    attributeFilter: ['data-screen', 'class', 'theater', 'fullscreen', 'hidden'],
+  function bindPlayer() {
+    boundUrl = location.href;
+    const url = new URL(boundUrl);
+    needsPlayer = url.hostname === 'www.bilibili.com' ||
+      (['www.youtube.com', 'youtube.com'].includes(url.hostname) &&
+       (url.pathname === '/watch' || url.pathname.startsWith('/live/')));
+    const player = !needsPlayer ? null : url.hostname === 'www.bilibili.com'
+      ? document.querySelector('.bpx-player-container') : document.querySelector('ytd-watch-flexy');
+    if (player !== observedPlayer) {
+      observer.disconnect(); observedPlayer = player;
+      if (player) observer.observe(player, {
+        attributes: true, attributeFilter: ['data-screen', 'theater', 'hidden'],
+      });
+    }
+    schedule();
+  }
+  // Discover delayed/replaced players without observing page-wide class churn.
+  const treeObserver = new MutationObserver(() => {
+    if (location.href !== boundUrl || (needsPlayer && !observedPlayer?.isConnected)) bindPlayer();
   });
+  treeObserver.observe(document.documentElement, { subtree: true, childList: true });
   const onQuery = (message, sender, respond) => {
     if (message?.type === 'edge-theme-watch-query') respond(sample());
   };
   chrome.runtime.onMessage.addListener(onQuery);
   const events = ['pageshow', 'popstate', 'hashchange', 'yt-navigate-finish', 'fullscreenchange'];
   for (const name of events) {
-    window.addEventListener(name, schedule);
+    window.addEventListener(name, bindPlayer);
   }
   globalThis.__edgeThemeWatchObserver = { dispose() {
     disconnected = true;
     observer.disconnect();
-    if (timer !== undefined) clearTimeout(timer);
+    treeObserver.disconnect();
     try { chrome.runtime.onMessage.removeListener(onQuery); } catch {}
-    for (const name of events) window.removeEventListener(name, schedule);
+    for (const name of events) window.removeEventListener(name, bindPlayer);
   } };
+  bindPlayer();
   report();
 })();

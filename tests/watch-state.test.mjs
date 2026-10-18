@@ -6,21 +6,47 @@ import { activeWatchContext, isWatchSite } from '../packages/controller/src/watc
 const source = await readFile(new URL('../packages/controller/src/watch-state.js', import.meta.url), 'utf8');
 function page(url) {
   const queryListeners = []; const reports = [];
+  const observers=[];const microtasks=[];const listeners=new Map();
   const body = { screen: 'normal', theater: false, hidden: false };
+  const biliPlayer={isConnected:true,getAttribute:()=>body.screen};
+  const ytPlayer={isConnected:true,get hidden(){return body.hidden;},hasAttribute:name=>name==='theater'&&body.theater};
   const location = { href: url };
   const context = { URL, location, crypto: { randomUUID: () => 'doc' },
-    setTimeout: () => 1, clearTimeout() {}, window: { addEventListener() {}, removeEventListener() {} },
-    MutationObserver: class { observe() {} disconnect() {} },
+    queueMicrotask:fn=>microtasks.push(fn), Date,
+    setTimeout: () => {throw Error('不允许固定延时或轮询');}, clearTimeout() {},
+    window: { addEventListener(name,fn) {listeners.set(name,fn);}, removeEventListener(name) {listeners.delete(name);} },
+    MutationObserver: class { constructor(fn){this.callback=fn;observers.push(this);} observe(target,options) {this.target=target;this.options=options;} disconnect() {} },
     document: { documentElement: {}, querySelector(selector) {
-      if (selector === '.bpx-player-container') return { getAttribute: () => body.screen };
-      if (selector === 'ytd-watch-flexy') return { hidden: body.hidden, hasAttribute: name => name === 'theater' && body.theater };
+      if (selector === '.bpx-player-container') return biliPlayer;
+      if (selector === 'ytd-watch-flexy') return ytPlayer;
       return null;
     } },
     chrome: { runtime: { onMessage: { addListener(fn) { queryListeners.push(fn); } },
       async sendMessage(value) { reports.push(value); return { ok: true }; } } } };
   vm.runInNewContext(source, context);
-  return { body, location, reports, read() { let value; queryListeners[0]({type:'edge-theme-watch-query'}, {}, v => { value = v; }); return value; } };
+  return { body, location, reports, observers, microtasks, biliPlayer, ytPlayer, listeners,
+    flush(){while(microtasks.length)microtasks.shift()();},
+    read() { let value; queryListeners[0]({type:'edge-theme-watch-query'}, {}, v => { value = v; }); return value; } };
 }
+test('播放器属性变化在下一微任务报告，不等定时器；同轮变化只报告最终状态',()=>{
+  const p=page('https://www.bilibili.com/video/BVfake/');p.flush();p.reports.length=0;
+  assert.equal(p.observers[0].target,p.biliPlayer);
+  assert.equal(p.observers[0].options.subtree,undefined);
+  p.body.screen='web';p.observers[0].callback();p.observers[0].callback();
+  assert.equal(p.microtasks.length,1);p.flush();assert.equal(p.reports.length,1);assert.equal(p.reports[0].immersive,true);
+  p.body.screen='normal';p.observers[0].callback();p.body.screen='web';p.observers[0].callback();p.flush();
+  assert.equal(p.reports.length,1,'最终状态未变化不重复发消息');
+});
+test('普通页面节点变化和直播弹幕不触发采样；单页导航和播放器替换仍会重新绑定',()=>{
+  for(const url of ['https://live.bilibili.com/blanc/123','https://www.youtube.com/watch?v=one']){
+    const p=page(url);p.flush();p.reports.length=0;
+    for(let i=0;i<100;i++)p.observers[1].callback();
+    assert.equal(p.microtasks.length,0);assert.equal(p.reports.length,0);
+    p.location.href='https://www.youtube.com/watch?v=two';p.body.theater=true;p.observers[1].callback();p.flush();
+    assert.equal(p.reports.at(-1).immersive,true);assert.equal(p.observers[0].target,p.ytPlayer);
+    p.ytPlayer.isConnected=false;p.observers[1].callback();assert.equal(p.microtasks.length,1);
+  }
+});
 test('B站只在网页全屏触发；退出再进入会创建新观看段', () => {
   const p = page('https://www.bilibili.com/video/BVfake/'); assert.equal(p.read().immersive, false);
   p.body.screen = 'web'; const first = p.read(); assert.equal(first.immersive, true);

@@ -15,9 +15,9 @@ export function createAutoMode(io) {
     await save();
   }
   return {
-    async reconcile() {
+    async reconcile(providedContext) {
       await load();
-      const context = await io.context();
+      const context = providedContext === undefined ? await io.context() : providedContext;
       const theme = await io.theme();
       const eligible = !!key(context) && state.suppressed[context.tabId] !== context.episode;
       if (eligible && !theme.enabled) {
@@ -25,12 +25,15 @@ export function createAutoMode(io) {
         await save(); // Persist before changing appearance so worker suspension is safe.
         try { await io.setTheme(theme, true); }
         catch (error) { state.owned = false; await save(); throw error; }
+        return { theme: { ...theme, enabled: true }, changed: true };
       }
       else if (!eligible && state.owned) {
         if (theme.enabled) await io.setTheme(theme, false);
         state.owned = false;
         await save();
+        return { theme: { ...theme, enabled: false }, changed: !!theme.enabled };
       }
+      return { theme, changed: false };
     },
     async manual() {
       await load();

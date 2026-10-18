@@ -10,12 +10,11 @@ export function isWatchSite(url) {
   catch { return false; }
 }
 
-export async function activeWatchContext(api) {
+export async function activeWatchContext(api, expectedTabIds) {
   if (!api.tabs || !api.windows) return null;
   const window = await api.windows.getLastFocused({ windowTypes: ['normal'] });
   const [tab] = await api.tabs.query({ active: true, windowId: window.id });
-  await api.storage?.local?.set({ watchContextProbe: { tabId: tab?.id,
-    urlAvailable: typeof tab?.url === 'string', supported: isWatchSite(tab?.url) } });
+  if (expectedTabIds && !expectedTabIds.has(tab?.id)) return { ignored: true };
   if (!tab || !isWatchSite(tab.url)) return null;
   const query = () => api.tabs.sendMessage(tab.id, { type: 'edge-theme-watch-query' }, { frameId: 0 });
   try {
@@ -31,7 +30,8 @@ export async function activeWatchContext(api) {
     return { tabId: tab.id, immersive: report.immersive, episode: report.episode };
   }
   catch (error) {
-    await api.storage?.local?.set({ watchContextError: String(error?.message || error) });
+    // Diagnostics must never hold the appearance decision behind disk writes.
+    void api.storage?.local?.set({ watchContextError: String(error?.message || error) })?.catch(() => {});
     return null;
   } // Closed, navigating, discarded or not yet granted site access.
 }

@@ -9,14 +9,19 @@ import { activeWatchContext, isWatchSite } from './watch-context.mjs';
 let operationTail = Promise.resolve();
 const expectedThemeEvents = [];
 const AUTO_STATE_KEY = 'watchAutoMode';
+let presentationKey;
+let autoQueued = false;
+let pendingAll = false;
+let pendingTabs = new Set();
+let pendingSentAt;
+let lastThemeApplyMs;
+function diagnose(value) {
+  void chrome.storage?.local?.set(value)?.catch(() => {});
+}
 const autoMode = createAutoMode({
   async load() { return (await chrome.storage?.session?.get(AUTO_STATE_KEY))?.[AUTO_STATE_KEY] || {}; },
   async save(value) { await chrome.storage?.session?.set({ [AUTO_STATE_KEY]: value }); },
-  async context() {
-    const context = await activeWatchContext(chrome);
-    await chrome.storage?.local?.set({ watchStatus: { context, checkedAt: Date.now() } });
-    return context;
-  },
+  context: () => activeWatchContext(chrome),
   theme: getDarkTheme,
   async setTheme(theme, enabled) {
     const current = await setDarkThemeEnabled(theme, enabled);
@@ -57,13 +62,17 @@ async function setActionPresentation(mode, themeVersion) {
   const title = themeVersion === expectedVersion
     ? ACTION_TITLES[mode]
     : `主题未更新：当前 ${themeVersion}，需要 ${expectedVersion}`;
+  const key = `${mode}:${title}`;
+  if (presentationKey === key) return;
   await Promise.all([
     chrome.action.setTitle({ title }),
     chrome.action.setIcon({ path: resolveActionIconPaths(mode) }),
   ]);
+  presentationKey = key;
 }
 
 async function setActionFailure(error) {
+  presentationKey = undefined;
   const title = error instanceof ThemeAvailabilityError
     ? ACTION_TITLES.themesUnavailable
     : ACTION_TITLES.failed;
@@ -91,6 +100,7 @@ async function synchronizeActionPresentation() {
 }
 
 async function setDarkThemeEnabled(theme, enabled) {
+  const started = performance.now();
   const marker = { id: theme.id, enabled };
   expectedThemeEvents.push(marker);
   try { await chrome.management.setEnabled(theme.id, enabled); }
@@ -103,10 +113,12 @@ async function setDarkThemeEnabled(theme, enabled) {
   if (current?.enabled !== enabled) {
     throw new Error(`Edge did not ${enabled ? 'enable' : 'disable'} theme ${theme.id}.`);
   }
-  return current;
+  lastThemeApplyMs = performance.now() - started;
+  return { ...theme, ...current };
 }
 
 async function performToggle() {
+  presentationKey = undefined;
   await chrome.action.setTitle({ title: ACTION_TITLES.busy });
 
   try {
@@ -118,16 +130,42 @@ async function performToggle() {
   }
 }
 
-async function reconcile() {
+async function reconcile(expectedTabIds, sentAt) {
+  const started = performance.now();
   try {
-    await autoMode.reconcile(); await synchronizeActionPresentation();
-    await chrome.storage?.local?.set({ watchLastError: null });
+    const context = await activeWatchContext(chrome, expectedTabIds);
+    if (context?.ignored) return;
+    const contextMs = performance.now() - started;
+    const result = await autoMode.reconcile(context);
+    // setTheme already updates the action when appearance changes.
+    if (!result.changed) await setActionPresentation(result.theme.enabled ? 'dark' : 'light', result.theme.version);
+    const metrics = result.changed ? { watchLatency: {
+      contextMs, themeApplyMs: lastThemeApplyMs, workerMs: performance.now() - started,
+      eventToApiDoneMs: sentAt ? Date.now() - sentAt : null, checkedAt: Date.now(),
+    } } : {};
+    diagnose({ watchStatus: { context, checkedAt: Date.now() }, watchLastError: null, ...metrics });
   }
   catch (error) {
     console.error('自动外观切换失败。', error);
-    await chrome.storage?.local?.set({ watchLastError: String(error?.message || error) });
+    diagnose({ watchLastError: String(error?.message || error) });
     await setActionFailure(error);
   }
+}
+
+// Coalesce bursts, but resolve the foreground tab and page state at execution time.
+// A background report cannot override an already pending foreground activation.
+function requestReconcile(tabId, sentAt) {
+  if (tabId === undefined) pendingAll = true;
+  else pendingTabs.add(tabId);
+  if (Number.isFinite(sentAt) && sentAt <= Date.now() && Date.now() - sentAt < 60000) pendingSentAt = sentAt;
+  if (autoQueued) return;
+  autoQueued = true;
+  void enqueue(async () => {
+    const ids = pendingAll ? undefined : pendingTabs;
+    const eventTime = pendingSentAt;
+    pendingAll = false; pendingTabs = new Set(); pendingSentAt = undefined; autoQueued = false;
+    await reconcile(ids, eventTime);
+  });
 }
 
 async function attachExistingPages() {
@@ -138,36 +176,29 @@ async function attachExistingPages() {
     chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/watch-state.js'] })));
 }
 
-chrome.runtime?.onStartup?.addListener(() => enqueue(reconcile));
+chrome.runtime?.onStartup?.addListener(() => enqueue(() => reconcile()));
 chrome.runtime?.onInstalled?.addListener(() => enqueue(async () => {
   // Never let an old/discarded background page hold the appearance queue open.
   void attachExistingPages().catch(error => console.error('页面状态检测加载失败。', error));
   await reconcile();
 }));
 chrome.action.onClicked.addListener(() => enqueue(performToggle));
-function reconcileForegroundTab(tabId) {
-  return enqueue(async () => {
-    const window = await chrome.windows.getLastFocused({ windowTypes: ['normal'] });
-    const [current] = await chrome.tabs.query({ active: true, windowId: window.id });
-    if (current?.id === tabId) await reconcile();
-  });
-}
 chrome.runtime?.onMessage?.addListener((message, sender, respond) => {
   if (message?.type !== 'edge-theme-watch-state' || sender.frameId !== 0 ||
     !sender.tab || !isWatchSite(sender.url)) return;
   // Discard reports from every background tab, including other windows.
-  void reconcileForegroundTab(sender.tab.id);
+  requestReconcile(sender.tab.id, message.sentAt);
   respond({ ok: true });
 });
-chrome.tabs?.onActivated?.addListener(({ tabId }) => { void reconcileForegroundTab(tabId); });
+chrome.tabs?.onActivated?.addListener(({ tabId }) => { requestReconcile(tabId); });
 chrome.tabs?.onUpdated?.addListener((id, change) => {
-  if (change.status || change.url || change.discarded !== undefined) void reconcileForegroundTab(id);
+  if (change.status || change.url || change.discarded !== undefined) requestReconcile(id);
 });
 chrome.tabs?.onRemoved?.addListener(id => { void enqueue(async () => {
   await autoMode.forget(id); await reconcile();
 }); });
 chrome.windows?.onFocusChanged?.addListener(id => {
-  if (id !== chrome.windows.WINDOW_ID_NONE) void enqueue(reconcile);
+  if (id !== chrome.windows.WINDOW_ID_NONE) requestReconcile();
 });
 
 function themeEvent(theme, enabled) {
@@ -180,4 +211,4 @@ chrome.management?.onEnabled?.addListener(theme => themeEvent(theme, true));
 chrome.management?.onDisabled?.addListener(theme => themeEvent(theme, false));
 
 // A worker wake-up can occur without onStartup/onInstalled (e.g. reload/update).
-if (chrome.tabs) void enqueue(reconcile);
+if (chrome.tabs) requestReconcile();
