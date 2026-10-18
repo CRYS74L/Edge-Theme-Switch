@@ -10,7 +10,7 @@ function createFakeChrome(initialThemes) {
   const enabledCalls = [];
   const startupListeners = [];
   const installedListeners = [];
-  const themes = initialThemes.map((theme) => ({ ...theme }));
+  const themes = initialThemes.map((theme) => ({ version: '1.0.0.2', ...theme }));
 
   return {
     chrome: {
@@ -52,6 +52,9 @@ function createFakeChrome(initialThemes) {
         },
       },
       runtime: {
+        getManifest() {
+          return { version: '1.0.0.2' };
+        },
         getURL(path) {
           return path;
         },
@@ -200,6 +203,25 @@ test('深色主题包未加载时不会谎称 Edge 已切换', async () => {
   finally {
     console.error = originalConsoleError;
   }
+});
+
+test('重载控制器后仍会识别旧主题版本，并保留正常切换能力', async () => {
+  const fake = createFakeChrome([
+    { id: 'edge-dark-theme', name: 'Edge 外观切换 - 深色主题', type: 'theme',
+      enabled: false, version: '1.0.0.1' },
+  ]);
+
+  await withWorker(fake, 'theme-version-mismatch', async () => {
+    await fake.installedListeners[0]();
+    assert.equal(fake.titleCalls.at(-1).title,
+      '主题未更新：当前 1.0.0.1，需要 1.0.0.2');
+    assert.deepEqual(fake.enabledCalls, []);
+
+    await fake.clickListeners[0]();
+    assert.deepEqual(fake.enabledCalls, [{ id: 'edge-dark-theme', enabled: true }]);
+    assert.equal(fake.titleCalls.at(-1).title,
+      '主题未更新：当前 1.0.0.1，需要 1.0.0.2');
+  });
 });
 
 test('管理 API 失败时仍显示完整错误提示', async () => {

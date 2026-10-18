@@ -34,9 +34,13 @@ function resolveActionIconPaths(mode) {
   );
 }
 
-async function setActionPresentation(mode) {
+async function setActionPresentation(mode, themeVersion) {
+  const expectedVersion = chrome.runtime.getManifest().version;
+  const title = themeVersion === expectedVersion
+    ? ACTION_TITLES[mode]
+    : `主题未更新：当前 ${themeVersion}，需要 ${expectedVersion}`;
   await Promise.all([
-    chrome.action.setTitle({ title: ACTION_TITLES[mode] }),
+    chrome.action.setTitle({ title }),
     chrome.action.setIcon({ path: resolveActionIconPaths(mode) }),
   ]);
 }
@@ -60,7 +64,7 @@ async function getDarkTheme() {
 async function synchronizeActionPresentation() {
   try {
     const dark = await getDarkTheme();
-    await setActionPresentation(dark.enabled ? 'dark' : 'light');
+    await setActionPresentation(dark.enabled ? 'dark' : 'light', dark.version);
   }
   catch (error) {
     console.error('Edge 外观状态同步失败。', error);
@@ -74,6 +78,7 @@ async function setDarkThemeEnabled(theme, enabled) {
   if (current?.enabled !== enabled) {
     throw new Error(`Edge did not ${enabled ? 'enable' : 'disable'} theme ${theme.id}.`);
   }
+  return current;
 }
 
 async function performToggle() {
@@ -82,8 +87,8 @@ async function performToggle() {
   try {
     const dark = await getDarkTheme();
     const nextEnabled = !dark.enabled;
-    await setDarkThemeEnabled(dark, nextEnabled);
-    await setActionPresentation(nextEnabled ? 'dark' : 'light');
+    const current = await setDarkThemeEnabled(dark, nextEnabled);
+    await setActionPresentation(nextEnabled ? 'dark' : 'light', current.version);
   }
   catch (error) {
     console.error('Edge 整体外观切换失败。', error);
