@@ -5,15 +5,15 @@ import {
 } from './constants.mjs';
 import { createAutoMode } from './auto-mode.mjs';
 import { activeWatchContext, isWatchSite } from './watch-context.mjs';
+import { createPresentationQueue } from './action-presentation.mjs';
 
 let operationTail = Promise.resolve();
 const expectedThemeEvents = [];
 const AUTO_STATE_KEY = 'watchAutoMode';
-let presentationKey;
 let autoQueued = false;
 let pendingAll = false;
 let pendingTabs = new Set();
-let pendingSentAt;
+let pendingSentAt = new Map();
 let lastThemeApplyMs;
 let lastThemeCompletedAt;
 let lastThemeQueryMs;
@@ -22,6 +22,24 @@ let knownThemeId;
 function diagnose(value) {
   void chrome.storage?.local?.set(value)?.catch(() => {});
 }
+const presentation = createPresentationQueue({
+  async apply({ title, mode }) {
+    const started = performance.now();
+    const updates = await Promise.allSettled([
+      chrome.action.setTitle({ title }),
+      ...(mode ? [chrome.action.setIcon({ path: resolveActionIconPaths(mode) })] : []),
+    ]);
+    // Even if one update fails, the other must finish before any newer UI state.
+    const failed = updates.find(result => result.status === 'rejected');
+    if (failed) throw failed.reason;
+    diagnose({ watchPresentation: { mode: mode || 'error', durationMs: performance.now() - started,
+      checkedAt: Date.now() }, watchPresentationError: null });
+  },
+  onError(error) {
+    console.error('工具栏图标同步失败，主题切换状态保持。', error);
+    diagnose({ watchPresentationError: String(error?.message || error) });
+  },
+});
 const autoMode = createAutoMode({
   async load() { return (await chrome.storage?.session?.get(AUTO_STATE_KEY))?.[AUTO_STATE_KEY] || {}; },
   async save(value) {
@@ -33,7 +51,7 @@ const autoMode = createAutoMode({
   theme: getDarkTheme,
   async setTheme(theme, enabled) {
     const current = await setDarkThemeEnabled(theme, enabled);
-    await setActionPresentation(enabled ? 'dark' : 'light', current.version);
+    void setActionPresentation(enabled ? 'dark' : 'light', current.version);
   },
 });
 
@@ -51,6 +69,11 @@ function enqueue(operation) {
   return result;
 }
 
+// Event callers may await visual feedback without holding operationTail open.
+function enqueueWithPresentation(operation) {
+  return enqueue(operation).then(() => presentation.whenIdle());
+}
+
 function findDarkTheme(themes) {
   return themes.find((theme) => (
     theme.type === 'theme' && theme.name === DARK_THEME_NAME
@@ -65,26 +88,19 @@ function resolveActionIconPaths(mode) {
   );
 }
 
-async function setActionPresentation(mode, themeVersion) {
+function setActionPresentation(mode, themeVersion) {
   const expectedVersion = '1.0.0.5'; // Appearance package stays at the user-accepted dev.5.
   const title = themeVersion === expectedVersion
     ? ACTION_TITLES[mode]
     : `主题未更新：当前 ${themeVersion}，需要 ${expectedVersion}`;
-  const key = `${mode}:${title}`;
-  if (presentationKey === key) return;
-  await Promise.all([
-    chrome.action.setTitle({ title }),
-    chrome.action.setIcon({ path: resolveActionIconPaths(mode) }),
-  ]);
-  presentationKey = key;
+  return presentation.request({ key: `${mode}:${title}`, title, mode });
 }
 
-async function setActionFailure(error) {
-  presentationKey = undefined;
+function setActionFailure(error) {
   const title = error instanceof ThemeAvailabilityError
     ? ACTION_TITLES.themesUnavailable
     : ACTION_TITLES.failed;
-  await chrome.action.setTitle({ title });
+  return presentation.request({ key: `error:${title}`, title });
 }
 
 async function getDarkTheme() {
@@ -112,11 +128,11 @@ async function getDarkTheme() {
 async function synchronizeActionPresentation() {
   try {
     const dark = await getDarkTheme();
-    await setActionPresentation(dark.enabled ? 'dark' : 'light', dark.version);
+    void setActionPresentation(dark.enabled ? 'dark' : 'light', dark.version);
   }
   catch (error) {
     console.error('Edge 外观状态同步失败。', error);
-    await setActionFailure(error);
+    void setActionFailure(error);
   }
 }
 
@@ -140,28 +156,28 @@ async function setDarkThemeEnabled(theme, enabled) {
 }
 
 async function performToggle() {
-  presentationKey = undefined;
-  await chrome.action.setTitle({ title: ACTION_TITLES.busy });
-
   try {
     await autoMode.manual();
   }
   catch (error) {
     console.error('Edge 整体外观切换失败。', error);
-    await setActionFailure(error);
+    void setActionFailure(error);
   }
 }
 
-async function reconcile(expectedTabIds, sentAt) {
+async function reconcile(expectedTabIds, eventTimes) {
   const started = performance.now();
   try {
     const context = await activeWatchContext(chrome, expectedTabIds);
     if (context?.ignored) return;
+    const sentAt = eventTimes?.get(context?.tabId);
     const contextMs = performance.now() - started;
     const result = await autoMode.reconcile(context);
     // setTheme already updates the action when appearance changes.
-    if (!result.changed) await setActionPresentation(result.theme.enabled ? 'dark' : 'light', result.theme.version);
+    if (!result.changed) void setActionPresentation(result.theme.enabled ? 'dark' : 'light', result.theme.version);
     const metrics = result.changed ? { watchLatency: {
+      controllerVersion: chrome.runtime.getManifest().version,
+      eventAt: sentAt ?? null, themeCompletedAt: lastThemeCompletedAt,
       contextMs, themeQueryMs: lastThemeQueryMs, ownershipSaveMs: lastOwnershipSaveMs,
       themeApplyMs: lastThemeApplyMs, workerMs: performance.now() - started,
       eventToApiDoneMs: sentAt ? lastThemeCompletedAt - sentAt : null, checkedAt: Date.now(),
@@ -171,7 +187,7 @@ async function reconcile(expectedTabIds, sentAt) {
   catch (error) {
     console.error('自动外观切换失败。', error);
     diagnose({ watchLastError: String(error?.message || error) });
-    await setActionFailure(error);
+    void setActionFailure(error);
   }
 }
 
@@ -180,13 +196,13 @@ async function reconcile(expectedTabIds, sentAt) {
 function requestReconcile(tabId, sentAt) {
   if (tabId === undefined) pendingAll = true;
   else pendingTabs.add(tabId);
-  if (Number.isFinite(sentAt) && sentAt <= Date.now() && Date.now() - sentAt < 60000) pendingSentAt = sentAt;
+  if (Number.isFinite(sentAt) && sentAt <= Date.now() && Date.now() - sentAt < 60000) pendingSentAt.set(tabId, sentAt);
   if (autoQueued) return;
   autoQueued = true;
   void enqueue(async () => {
     const ids = pendingAll ? undefined : pendingTabs;
     const eventTime = pendingSentAt;
-    pendingAll = false; pendingTabs = new Set(); pendingSentAt = undefined; autoQueued = false;
+    pendingAll = false; pendingTabs = new Set(); pendingSentAt = new Map(); autoQueued = false;
     await reconcile(ids, eventTime);
   });
 }
@@ -199,13 +215,13 @@ async function attachExistingPages() {
     chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/watch-state.js'] })));
 }
 
-chrome.runtime?.onStartup?.addListener(() => enqueue(() => reconcile()));
-chrome.runtime?.onInstalled?.addListener(() => enqueue(async () => {
+chrome.runtime?.onStartup?.addListener(() => enqueueWithPresentation(() => reconcile()));
+chrome.runtime?.onInstalled?.addListener(() => enqueueWithPresentation(async () => {
   // Never let an old/discarded background page hold the appearance queue open.
   void attachExistingPages().catch(error => console.error('页面状态检测加载失败。', error));
   await reconcile();
 }));
-chrome.action.onClicked.addListener(() => enqueue(performToggle));
+chrome.action.onClicked.addListener(() => enqueueWithPresentation(performToggle));
 chrome.runtime?.onMessage?.addListener((message, sender, respond) => {
   if (message?.type !== 'edge-theme-watch-state' || sender.frameId !== 0 ||
     !sender.tab || !isWatchSite(sender.url)) return;
