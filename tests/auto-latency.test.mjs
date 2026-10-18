@@ -4,6 +4,7 @@ const turn = () => new Promise(setImmediate);
 function event(){const handlers=[];return {addListener(fn){handlers.push(fn);},emit(...args){return handlers.map(fn=>fn(...args));}};}
 export function createLatencyChrome() {
   const trace=[];let enabled=false;let immersive=false;let hold=false;let release;
+  const theme=()=>({id:'dark',name:'Edge 外观切换 - 深色主题',version:'1.0.0.5',type:'theme',enabled});
   let activeId=1;
   const api={
     runtime:{getManifest:()=>({version:'1.1.0.1',host_permissions:['https://www.bilibili.com/*']}),getURL:p=>p,onStartup:event(),onInstalled:event(),onMessage:event()},
@@ -11,7 +12,7 @@ export function createLatencyChrome() {
     windows:{getLastFocused:async()=>{trace.push('window');return {id:1};},onFocusChanged:event(),WINDOW_ID_NONE:-1},
     tabs:{query:async()=>{trace.push('activeTab');return [{id:activeId,url:activeId===1?'https://www.bilibili.com/video/BVfake/':'https://example.invalid/'}];},sendMessage:async()=>{trace.push('playerQuery');return {type:'edge-theme-watch-state',immersive,episode:'page:1'};},onActivated:event(),onUpdated:event(),onRemoved:event()},
     storage:{session:{get:async()=>{trace.push('ownershipRead');return {};},set:async()=>{trace.push('ownershipWrite');}},local:{set:async()=>{trace.push('diagnostic');if(hold)await new Promise(r=>{release=r;});}}},
-    management:{getAll:async()=>{trace.push('themes');return [{id:'dark',name:'Edge 外观切换 - 深色主题',version:'1.0.0.5',type:'theme',enabled}];},get:async()=>{trace.push('themeReadback');return {enabled};},setEnabled:async(id,value)=>{trace.push('themeApply');enabled=value;api.management[value?'onEnabled':'onDisabled'].emit({id,name:'Edge 外观切换 - 深色主题',type:'theme'});},onEnabled:event(),onDisabled:event()},
+    management:{getAll:async()=>{trace.push('themes');return [theme()];},get:async()=>{trace.push('themeReadback');return theme();},setEnabled:async(id,value)=>{trace.push('themeApply');enabled=value;api.management[value?'onEnabled':'onDisabled'].emit({id,name:'Edge 外观切换 - 深色主题',type:'theme'});},onEnabled:event(),onDisabled:event()},
   };
   return {api,trace,get enabled(){return enabled;},set immersive(v){immersive=v;},set activeId(v){activeId=v;},holdDiagnostics(){hold=true;},releaseDiagnostics(){hold=false;release?.();}};
 }
@@ -27,8 +28,21 @@ test('本机诊断写入阻塞时仍能切换主题；前台只复核一次且�
     assert.equal(h.trace.filter(x=>x==='activeTab').length,1);
     assert.equal(h.trace.filter(x=>x==='window').length,1);
     assert.ok(h.trace.indexOf('ownershipWrite')<h.trace.indexOf('themeApply'));
-    assert.ok(h.trace.indexOf('themeReadback')>h.trace.indexOf('themeApply'));
+    assert.ok(h.trace.lastIndexOf('themeReadback')>h.trace.indexOf('themeApply'));
+    assert.equal(h.trace.includes('themes'),false,'已知主题仅查询当前元数据，不再枚举所有扩展');
   } finally {h.releaseDiagnostics();await turn();globalThis.chrome=old;}
+});
+
+test('缓存只保存主题身份，主题被移除或换ID后仍重新发现', async()=>{
+  const old=globalThis.chrome;const h=createLatencyChrome();globalThis.chrome=h.api;
+  try {
+    await import(`../packages/controller/src/service-worker.mjs?rediscover=${Date.now()}`);await turn();h.trace.length=0;
+    const oldGet=h.api.management.get;
+    h.api.management.get=async id=>{if(id==='dark')throw Error('removed');return {...await oldGet(id),id};};
+    h.api.management.getAll=async()=>{h.trace.push('rediscover');return [{id:'replacement',type:'theme',name:'Edge 外观切换 - 深色主题',version:'1.0.0.5',enabled:false}];};
+    h.immersive=true;h.api.tabs.onActivated.emit({tabId:1});await turn();
+    assert.equal(h.enabled,true);assert.ok(h.trace.includes('rediscover'));
+  } finally {await turn();globalThis.chrome=old;}
 });
 
 test('突发页面通知合并为一次复核，随后后台通知不覆盖前台标签', async()=>{

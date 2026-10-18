@@ -15,12 +15,20 @@ let pendingAll = false;
 let pendingTabs = new Set();
 let pendingSentAt;
 let lastThemeApplyMs;
+let lastThemeCompletedAt;
+let lastThemeQueryMs;
+let lastOwnershipSaveMs;
+let knownThemeId;
 function diagnose(value) {
   void chrome.storage?.local?.set(value)?.catch(() => {});
 }
 const autoMode = createAutoMode({
   async load() { return (await chrome.storage?.session?.get(AUTO_STATE_KEY))?.[AUTO_STATE_KEY] || {}; },
-  async save(value) { await chrome.storage?.session?.set({ [AUTO_STATE_KEY]: value }); },
+  async save(value) {
+    const started = performance.now();
+    await chrome.storage?.session?.set({ [AUTO_STATE_KEY]: value });
+    lastOwnershipSaveMs = performance.now() - started;
+  },
   context: () => activeWatchContext(chrome),
   theme: getDarkTheme,
   async setTheme(theme, enabled) {
@@ -80,12 +88,25 @@ async function setActionFailure(error) {
 }
 
 async function getDarkTheme() {
-  const themes = await chrome.management.getAll();
-  const dark = findDarkTheme(themes);
-  if (!dark) {
-    throw new ThemeAvailabilityError();
+  const started = performance.now();
+  try {
+    // Cache identity only. Always ask Edge for current enabled/version metadata.
+    if (knownThemeId) {
+      try {
+        const current = await chrome.management.get(knownThemeId);
+        if (current?.type === 'theme' && current.name === DARK_THEME_NAME) return current;
+      }
+      catch { /* Removed/reinstalled themes are rediscovered below. */ }
+      knownThemeId = undefined;
+    }
+    const dark = findDarkTheme(await chrome.management.getAll());
+    if (!dark) throw new ThemeAvailabilityError();
+    knownThemeId = dark.id;
+    return dark;
   }
-  return dark;
+  finally {
+    lastThemeQueryMs = performance.now() - started;
+  }
 }
 
 async function synchronizeActionPresentation() {
@@ -114,6 +135,7 @@ async function setDarkThemeEnabled(theme, enabled) {
     throw new Error(`Edge did not ${enabled ? 'enable' : 'disable'} theme ${theme.id}.`);
   }
   lastThemeApplyMs = performance.now() - started;
+  lastThemeCompletedAt = Date.now();
   return { ...theme, ...current };
 }
 
@@ -140,8 +162,9 @@ async function reconcile(expectedTabIds, sentAt) {
     // setTheme already updates the action when appearance changes.
     if (!result.changed) await setActionPresentation(result.theme.enabled ? 'dark' : 'light', result.theme.version);
     const metrics = result.changed ? { watchLatency: {
-      contextMs, themeApplyMs: lastThemeApplyMs, workerMs: performance.now() - started,
-      eventToApiDoneMs: sentAt ? Date.now() - sentAt : null, checkedAt: Date.now(),
+      contextMs, themeQueryMs: lastThemeQueryMs, ownershipSaveMs: lastOwnershipSaveMs,
+      themeApplyMs: lastThemeApplyMs, workerMs: performance.now() - started,
+      eventToApiDoneMs: sentAt ? lastThemeCompletedAt - sentAt : null, checkedAt: Date.now(),
     } } : {};
     diagnose({ watchStatus: { context, checkedAt: Date.now() }, watchLastError: null, ...metrics });
   }
