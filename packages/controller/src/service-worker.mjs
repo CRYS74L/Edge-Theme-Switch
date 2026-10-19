@@ -14,11 +14,87 @@ let autoQueued = false;
 let pendingAll = false;
 let pendingTabs = new Set();
 let pendingSentAt = new Map();
+let transitionClock;
 let lastThemeApplyMs;
+let lastThemeDetails;
 let lastThemeCompletedAt;
 let lastThemeQueryMs;
 let lastOwnershipSaveMs;
 let knownThemeId;
+let foreground;
+let foregroundEpoch = 0;
+let outsideBrowser = false;
+const contextWaiters = new Set();
+const focusProbes = new Map();
+let lastContextTimings;
+let pendingRemoved = new Set();
+let forgetQueued = false;
+const traffic = { ignoredBackground: 0, canceledContext: 0 };
+
+function invalidateContext() {
+  foregroundEpoch += 1;
+  for (const cancel of contextWaiters) cancel({ ignored: true });
+  contextWaiters.clear();
+}
+
+function isBackground(tabId, tab) {
+  return outsideBrowser || tab?.active === false || (foreground?.tabId !== undefined && foreground.tabId !== tabId);
+}
+
+async function foregroundContext(expectedTabIds) {
+  if (outsideBrowser) return { ignored: true };
+  const epoch = foregroundEpoch;
+  let cancel;
+  const canceled = new Promise(resolve => { cancel = resolve; contextWaiters.add(resolve); });
+  const current = () => epoch === foregroundEpoch;
+  const context = activeWatchContext(chrome, expectedTabIds, {
+    foreground, isCurrent: current, requireFocused: true,
+    observe(value) {
+      if (!current()) return;
+      // A snapshot can lag a focus event. It must not latch detection off.
+      if (value.focused === false) foreground = undefined;
+      else foreground = value;
+    },
+    trace(value) { if (current()) lastContextTimings = value; },
+  });
+  try {
+    const result = await Promise.race([context, canceled]);
+    if (!current()) { traffic.canceledContext += 1; return { ignored: true }; }
+    return result;
+  }
+  finally { contextWaiters.delete(cancel); }
+}
+
+function recoverWindowFocus(windowId) {
+  if (!Number.isInteger(windowId) || windowId < 0 || !chrome.windows?.get) return;
+  const epoch = foregroundEpoch;
+  const eventAt = Date.now();
+  if (focusProbes.get(windowId) === epoch) return;
+  focusProbes.set(windowId, epoch);
+  void (async () => {
+    try {
+      const window = await chrome.windows.get(windowId);
+      if (epoch !== foregroundEpoch || !window.focused || window.type !== 'normal') return;
+      outsideBrowser = false;
+      invalidateContext(); foreground = { windowId };
+      transitionClock = { at: eventAt };
+      diagnose({ watchFocus: { source: 'verified-page-or-tab', windowId, checkedAt: Date.now() } });
+      requestReconcile(undefined, eventAt);
+    }
+    catch { /* A closed window is not a foreground recovery signal. */ }
+    finally { if (focusProbes.get(windowId) === epoch) focusProbes.delete(windowId); }
+  })();
+}
+
+function forgetClosedTab(id) {
+  pendingRemoved.add(id);
+  if (forgetQueued) return;
+  forgetQueued = true;
+  void enqueue(async () => {
+    const ids = pendingRemoved; pendingRemoved = new Set(); forgetQueued = false;
+    await autoMode.forgetMany(ids);
+  });
+}
 function diagnose(value) {
   void chrome.storage?.local?.set(value)?.catch(() => {});
 }
@@ -140,18 +216,22 @@ async function setDarkThemeEnabled(theme, enabled) {
   const started = performance.now();
   const marker = { id: theme.id, enabled };
   expectedThemeEvents.push(marker);
+  const setStarted = performance.now();
   try { await chrome.management.setEnabled(theme.id, enabled); }
   catch (error) {
     const index = expectedThemeEvents.indexOf(marker);
     if (index !== -1) expectedThemeEvents.splice(index, 1);
     throw error;
   }
+  const themeSetMs = performance.now() - setStarted;
+  const verifyStarted = performance.now();
   const current = await chrome.management.get(theme.id);
   if (current?.enabled !== enabled) {
     throw new Error(`Edge did not ${enabled ? 'enable' : 'disable'} theme ${theme.id}.`);
   }
   lastThemeApplyMs = performance.now() - started;
   lastThemeCompletedAt = Date.now();
+  lastThemeDetails = { enabled, themeSetMs, themeVerifyMs: performance.now() - verifyStarted };
   return { ...theme, ...current };
 }
 
@@ -167,20 +247,29 @@ async function performToggle() {
 
 async function reconcile(expectedTabIds, eventTimes) {
   const started = performance.now();
+  const epoch = foregroundEpoch;
+  const clock = transitionClock;
   try {
-    const context = await activeWatchContext(chrome, expectedTabIds);
+    const context = await foregroundContext(expectedTabIds);
     if (context?.ignored) return;
-    const sentAt = eventTimes?.get(context?.tabId);
+    const tabId = context?.tabId ?? foreground?.tabId;
+    const eventAt = eventTimes?.get(tabId) ?? eventTimes?.get(undefined);
+    const clockAt = clock && (clock.tabId === undefined || clock.tabId === tabId) ? clock.at : undefined;
+    const sentAt = Math.min(eventAt ?? Infinity, clockAt ?? Infinity);
     const contextMs = performance.now() - started;
-    const result = await autoMode.reconcile(context);
+    const result = await autoMode.reconcile(context, () => epoch === foregroundEpoch && !outsideBrowser);
+    if (result.ignored) return;
+    if (transitionClock === clock) transitionClock = undefined;
     // setTheme already updates the action when appearance changes.
     if (!result.changed) void setActionPresentation(result.theme.enabled ? 'dark' : 'light', result.theme.version);
     const metrics = result.changed ? { watchLatency: {
       controllerVersion: chrome.runtime.getManifest().version,
-      eventAt: sentAt ?? null, themeCompletedAt: lastThemeCompletedAt,
+      eventAt: Number.isFinite(sentAt) ? sentAt : null, themeCompletedAt: lastThemeCompletedAt,
+      ...lastThemeDetails, contextLookup: lastContextTimings,
+      traffic: { ...traffic },
       contextMs, themeQueryMs: lastThemeQueryMs, ownershipSaveMs: lastOwnershipSaveMs,
       themeApplyMs: lastThemeApplyMs, workerMs: performance.now() - started,
-      eventToApiDoneMs: sentAt ? lastThemeCompletedAt - sentAt : null, checkedAt: Date.now(),
+      eventToApiDoneMs: Number.isFinite(sentAt) ? lastThemeCompletedAt - sentAt : null, checkedAt: Date.now(),
     } } : {};
     diagnose({ watchStatus: { context, checkedAt: Date.now() }, watchLastError: null, ...metrics });
   }
@@ -196,7 +285,13 @@ async function reconcile(expectedTabIds, eventTimes) {
 function requestReconcile(tabId, sentAt) {
   if (tabId === undefined) pendingAll = true;
   else pendingTabs.add(tabId);
-  if (Number.isFinite(sentAt) && sentAt <= Date.now() && Date.now() - sentAt < 60000) pendingSentAt.set(tabId, sentAt);
+  if (Number.isFinite(sentAt) && sentAt <= Date.now() && Date.now() - sentAt < 60000) {
+    pendingSentAt.set(tabId, Math.min(pendingSentAt.get(tabId) ?? sentAt, sentAt));
+    if (!transitionClock || (tabId !== undefined && transitionClock.tabId !== undefined && transitionClock.tabId !== tabId)) {
+      transitionClock = { tabId, at: sentAt };
+    }
+    else transitionClock.at = Math.min(transitionClock.at, sentAt);
+  }
   if (autoQueued) return;
   autoQueued = true;
   void enqueue(async () => {
@@ -225,19 +320,40 @@ chrome.action.onClicked.addListener(() => enqueueWithPresentation(performToggle)
 chrome.runtime?.onMessage?.addListener((message, sender, respond) => {
   if (message?.type !== 'edge-theme-watch-state' || sender.frameId !== 0 ||
     !sender.tab || !isWatchSite(sender.url)) return;
-  // Discard reports from every background tab, including other windows.
+  if (isBackground(sender.tab.id, sender.tab)) {
+    if (sender.tab.active === true) recoverWindowFocus(sender.tab.windowId);
+    traffic.ignoredBackground += 1; respond({ ok: true }); return;
+  }
+  invalidateContext();
   requestReconcile(sender.tab.id, message.sentAt);
   respond({ ok: true });
 });
-chrome.tabs?.onActivated?.addListener(({ tabId }) => { requestReconcile(tabId); });
-chrome.tabs?.onUpdated?.addListener((id, change) => {
-  if (change.status || change.url || change.discarded !== undefined) requestReconcile(id);
+chrome.tabs?.onActivated?.addListener(({ tabId, windowId }) => {
+  if (outsideBrowser || (foreground && windowId !== undefined && foreground.windowId !== windowId)) {
+    recoverWindowFocus(windowId); return;
+  }
+  invalidateContext();
+  if (foreground) foreground = { tabId, windowId: foreground.windowId };
+  transitionClock = { tabId, at: Date.now() };
+  requestReconcile(tabId, Date.now());
 });
-chrome.tabs?.onRemoved?.addListener(id => { void enqueue(async () => {
-  await autoMode.forget(id); await reconcile();
-}); });
+chrome.tabs?.onUpdated?.addListener((id, change, tab) => {
+  if (!(change.status || change.url || change.discarded !== undefined)) return;
+  if (isBackground(id, tab)) { traffic.ignoredBackground += 1; return; }
+  if (change.url || change.status === 'loading' || change.discarded) invalidateContext();
+  requestReconcile(id);
+});
+chrome.tabs?.onRemoved?.addListener(id => {
+  forgetClosedTab(id);
+  if (isBackground(id)) return;
+  invalidateContext(); foreground = undefined; requestReconcile();
+});
 chrome.windows?.onFocusChanged?.addListener(id => {
-  if (id !== chrome.windows.WINDOW_ID_NONE) requestReconcile();
+  outsideBrowser = id === chrome.windows.WINDOW_ID_NONE;
+  invalidateContext(); foreground = outsideBrowser ? undefined : { windowId: id };
+  transitionClock = outsideBrowser ? undefined : { at: Date.now() };
+  diagnose({ watchFocus: { source: 'window-event', windowId: id, checkedAt: Date.now() } });
+  if (!outsideBrowser) requestReconcile(undefined, Date.now());
 });
 
 function themeEvent(theme, enabled) {

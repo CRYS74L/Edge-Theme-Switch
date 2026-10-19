@@ -76,3 +76,22 @@ test('启用失败不会留下自动拥有权，也不会吞掉错误', async ()
     setTheme: async () => { throw new Error('blocked'); } });
   await assert.rejects(mode.reconcile(), /blocked/); assert.equal(saved.owned, false);
 });
+
+test('关闭没有手动抑制记录的后台标签不写会话；批量关闭只保存实际变化', async()=>{
+  let writes=0;
+  const mode=createAutoMode({load:async()=>({suppressed:{7:'page:1'}}),save:async()=>{writes++;}});
+  await mode.forget(100);assert.equal(writes,0);
+  await mode.forgetMany([8,9,7,10]);assert.equal(writes,1);
+  await mode.forgetMany([7,8]);assert.equal(writes,1);
+});
+
+test('保存自动来源期间前台已变化，不再应用旧标签的深色并回滚拥有权',async()=>{
+  let current=true;let release;let saved;const calls=[];
+  const mode=createAutoMode({load:async()=>({}),theme:async()=>({enabled:false}),
+    save:async value=>{saved=structuredClone(value);if(value.owned)await new Promise(resolve=>{release=resolve;});},
+    setTheme:async(theme,enabled)=>calls.push(enabled),
+  });
+  const pending=mode.reconcile(watching(),()=>current);
+  await new Promise(setImmediate);current=false;release();
+  assert.equal((await pending).ignored,true);assert.deepEqual(calls,[]);assert.equal(saved.owned,false);
+});

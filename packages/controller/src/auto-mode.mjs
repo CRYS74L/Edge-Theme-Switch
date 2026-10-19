@@ -7,6 +7,16 @@ export function createAutoMode(io) {
     return state;
   }
   const save = () => io.save(state);
+  async function forgetMany(tabIds) {
+    await load();
+    let changed = false;
+    for (const tabId of tabIds) {
+      if (Object.hasOwn(state.suppressed, tabId)) {
+        delete state.suppressed[tabId]; changed = true;
+      }
+    }
+    if (changed) await save();
+  }
   const key = context => context?.immersive ? `${context.tabId}:${context.episode}` : null;
   async function suppressCurrent() {
     const context = await io.context();
@@ -15,14 +25,19 @@ export function createAutoMode(io) {
     await save();
   }
   return {
-    async reconcile(providedContext) {
+    async reconcile(providedContext, isCurrent = () => true) {
       await load();
       const context = providedContext === undefined ? await io.context() : providedContext;
       const theme = await io.theme();
+      if (!isCurrent()) return { ignored: true };
       const eligible = !!key(context) && state.suppressed[context.tabId] !== context.episode;
       if (eligible && !theme.enabled) {
+        const previousOwned = state.owned;
         state.owned = true;
         await save(); // Persist before changing appearance so worker suspension is safe.
+        if (!isCurrent()) {
+          state.owned = previousOwned; await save(); return { ignored: true };
+        }
         try { await io.setTheme(theme, true); }
         catch (error) { state.owned = false; await save(); throw error; }
         return { theme: { ...theme, enabled: true }, changed: true };
@@ -42,8 +57,7 @@ export function createAutoMode(io) {
       await io.setTheme(theme, !theme.enabled);
     },
     async externalChange() { await load(); await suppressCurrent(); },
-    async forget(tabId) {
-      await load(); delete state.suppressed[tabId]; await save();
-    },
+    forget: tabId => forgetMany([tabId]),
+    forgetMany,
   };
 }

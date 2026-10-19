@@ -27,6 +27,7 @@ test('实际 worker 事件链：页面报告、标签切换、手动按钮和 wo
     await settle();
     assert.deepEqual(calls,[], '后台视频和其他窗口标签均不能触发深色');
     active={id:1,url:'https://www.bilibili.com/video/BVfake/',immersive:false,episode:'one:1'};
+    chrome.tabs.onActivated.emit({tabId:1,windowId:7});
     active.immersive=true;
     let ack;
     chrome.runtime.onMessage.emit({type:'edge-theme-watch-state'},{frameId:0,url:active.url,tab:{id:1}},v=>{ack=v;});await settle();

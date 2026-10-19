@@ -154,3 +154,172 @@ test('旧标题失败且旧图标挂起时，不允许旧图标在最新浅色�
     releaseIcon();await turn();assert.equal(appliedIcon,'icons/icon-light-16.png');
   } finally {releaseIcon?.();await turn();globalThis.chrome=old;console.error=oldError;}
 });
+
+test('大量后台标签分批更新和关闭，不查询前台、不读主题、不反复写会话', async()=>{
+  const old=globalThis.chrome;const h=createLatencyChrome();globalThis.chrome=h.api;
+  try {
+    await import(`../packages/controller/src/service-worker.mjs?backgroundLoad=${Date.now()}`);await turn();h.trace.length=0;
+    for(let id=100;id<200;id++){
+      h.api.tabs.onUpdated.emit(id,{status:'complete'},{id,active:false,windowId:1});
+      h.api.runtime.onMessage.emit({type:'edge-theme-watch-state'},
+        {frameId:0,url:'https://www.bilibili.com/video/BVfake/',tab:{id,active:false,windowId:1}},()=>{});
+      h.api.tabs.onRemoved.emit(id,{windowId:1,isWindowClosing:false});
+      await turn();
+    }
+    const apiWork=h.trace.filter(v=>['window','activeTab','activeTabById','themes','themeReadback','ownershipWrite'].includes(v));
+    assert.equal(apiWork.length,0,'已知后台标签的事件不应触发前台查询或无意义状态保存');
+    assert.equal(h.enabled,false);
+  } finally {await turn();globalThis.chrome=old;}
+});
+
+test('离开响应缓慢的播放器后，旧页面查询不能继续卡住当前标签和手动按钮', async()=>{
+  const old=globalThis.chrome;const h=createLatencyChrome();globalThis.chrome=h.api;
+  let release;let clicks;
+  try {
+    await import(`../packages/controller/src/service-worker.mjs?stalePlayer=${Date.now()}`);await turn();
+    h.api.tabs.sendMessage=()=>new Promise(resolve=>{release=()=>resolve({type:'edge-theme-watch-state',immersive:true,episode:'old:1'});});
+    h.api.runtime.onMessage.emit({type:'edge-theme-watch-state'},
+      {frameId:0,url:'https://www.bilibili.com/video/BVfake/',tab:{id:1,active:true,windowId:1}},()=>{});
+    await turn();assert.equal(typeof release,'function');
+    h.activeId=2;h.api.tabs.onActivated.emit({tabId:2,windowId:1});
+    clicks=h.api.action.onClicked.emit();await turn();
+    assert.equal(h.enabled,true,'已离开的旧播放器查询应取消等待，允许当前普通标签上的手动切换');
+  } finally {release?.();await Promise.all(clicks||[]);await turn();globalThis.chrome=old;}
+});
+
+test('前台稳定时直接验证单个标签；切到其他应用后后台事件不能切换外观',async()=>{
+  const old=globalThis.chrome;const h=createLatencyChrome();globalThis.chrome=h.api;
+  try {
+    await import(`../packages/controller/src/service-worker.mjs?directForeground=${Date.now()}`);await turn();h.trace.length=0;
+    h.api.tabs.get=async id=>{h.trace.push('activeTabById');return {id,active:true,windowId:1,url:'https://www.bilibili.com/video/BVfake/'};};
+    h.immersive=true;h.api.tabs.onActivated.emit({tabId:1,windowId:1});await turn();
+    assert.equal(h.enabled,true);assert.equal(h.trace.includes('activeTab'),false);assert.equal(h.trace.includes('window'),false);
+    h.api.windows.onFocusChanged.emit(-1);h.immersive=false;h.trace.length=0;
+    h.api.runtime.onMessage.emit({type:'edge-theme-watch-state'},
+      {frameId:0,url:'https://www.bilibili.com/video/BVfake/',tab:{id:1,active:true,windowId:1}},()=>{});
+    h.api.tabs.onUpdated.emit(1,{status:'complete'},{id:1,active:true,windowId:1});await turn();
+    assert.equal(h.enabled,true);assert.equal(h.trace.length,0);
+    h.api.windows.onFocusChanged.emit(1);await turn();assert.equal(h.enabled,false);
+  }finally{await turn();globalThis.chrome=old;}
+});
+
+test('其他窗口活动标签不抢占当前窗口；真正切换窗口后重新发现前台',async()=>{
+  const old=globalThis.chrome;const h=createLatencyChrome();globalThis.chrome=h.api;
+  try {
+    await import(`../packages/controller/src/service-worker.mjs?windows=${Date.now()}`);await turn();h.trace.length=0;
+    h.api.tabs.onActivated.emit({tabId:99,windowId:8});await turn();assert.equal(h.trace.length,0);
+    h.api.windows.getLastFocused=async()=>({id:8});
+    h.api.tabs.query=async()=>[{id:99,active:true,windowId:8,url:'https://www.bilibili.com/video/BVfake/'}];
+    h.immersive=true;h.api.windows.onFocusChanged.emit(8);await turn();assert.equal(h.enabled,true);
+    h.trace.length=0;h.api.tabs.onActivated.emit({tabId:1,windowId:1});
+    h.api.runtime.onMessage.emit({type:'edge-theme-watch-state'},
+      {frameId:0,url:'https://www.bilibili.com/video/BVfake/',tab:{id:1,active:true,windowId:1}},()=>{});
+    await turn();assert.equal(h.trace.length,0);assert.equal(h.enabled,true);
+  }finally{await turn();globalThis.chrome=old;}
+});
+
+test('worker在Edge不处于前台时唤醒，只保持原主题；获得焦点后才自动切换',async()=>{
+  const old=globalThis.chrome;const h=createLatencyChrome();globalThis.chrome=h.api;
+  let focused=false;h.immersive=true;
+  h.api.windows.getLastFocused=async()=>({id:1,focused});
+  try {
+    await import(`../packages/controller/src/service-worker.mjs?unfocusedWake=${Date.now()}`);await turn();
+    assert.equal(h.enabled,false,'非前台唤醒不应因为上一次浏览器标签仍在观看模式而切换主题');
+    focused=true;h.api.windows.onFocusChanged.emit(1);await turn();assert.equal(h.enabled,true);
+  }finally{await turn();globalThis.chrome=old;}
+});
+
+test('恢复焦点时一次未聚焦快照不能永久停用后续页面检测',async()=>{
+  const old=globalThis.chrome;const h=createLatencyChrome();globalThis.chrome=h.api;
+  let focused=true;
+  h.api.windows.getLastFocused=async()=>({id:1,focused});
+  try {
+    await import(`../packages/controller/src/service-worker.mjs?focusSnapshot=${Date.now()}`);await turn();
+    h.api.windows.onFocusChanged.emit(-1);focused=false;
+    h.api.windows.onFocusChanged.emit(1);await turn();
+    focused=true;h.immersive=true;
+    h.api.runtime.onMessage.emit({type:'edge-theme-watch-state'},
+      {frameId:0,url:'https://www.bilibili.com/video/BVfake/',tab:{id:1,active:true,windowId:1}},()=>{});
+    await turn();assert.equal(h.enabled,true,'瞬时未聚焦不能形成必须重载才解除的停用状态');
+  }finally{await turn();globalThis.chrome=old;}
+});
+
+test('两个工作区恢复焦点时使用事件指定窗口，不被另一个工作区的最近窗口快照误导',async()=>{
+  const old=globalThis.chrome;const h=createLatencyChrome();globalThis.chrome=h.api;
+  try {
+    await import(`../packages/controller/src/service-worker.mjs?focusWindow=${Date.now()}`);await turn();
+    h.api.windows.onFocusChanged.emit(-1);
+    h.api.windows.getLastFocused=async()=>({id:1,focused:false});
+    h.api.windows.get=async id=>({id,focused:true,type:'normal'});
+    h.api.tabs.query=async query=>[{id:query.windowId===8?99:2,active:true,windowId:query.windowId,
+      url:query.windowId===8?'https://www.bilibili.com/video/BVfake/':'https://example.invalid/'}];
+    h.immersive=true;h.api.windows.onFocusChanged.emit(8);await turn();
+    assert.equal(h.enabled,true,'应识别恢复焦点的第二工作区当前播放器');
+  }finally{await turn();globalThis.chrome=old;}
+});
+
+test('页面焦点通知可补救漏掉的窗口焦点事件，但在其他应用前台时不能切换主题',async()=>{
+  const old=globalThis.chrome;const h=createLatencyChrome();globalThis.chrome=h.api;
+  let focused=false;
+  h.api.windows.get=async id=>({id,focused,type:'normal'});
+  try {
+    await import(`../packages/controller/src/service-worker.mjs?focusRecovery=${Date.now()}`);await turn();
+    h.api.windows.onFocusChanged.emit(-1);h.immersive=true;
+    const notify=()=>h.api.runtime.onMessage.emit({type:'edge-theme-watch-state'},
+      {frameId:0,url:'https://www.bilibili.com/video/BVfake/',tab:{id:1,active:true,windowId:1}},()=>{});
+    notify();await turn();assert.equal(h.enabled,false,'后台窗口自己的活动标签不等于前台标签');
+    focused=true;notify();await turn();assert.equal(h.enabled,true,'无需重载即可通过已核验的页面焦点事件恢复');
+    h.immersive=false;notify();await turn();assert.equal(h.enabled,false);
+  }finally{await turn();globalThis.chrome=old;}
+});
+
+test('旧工作区的慢焦点核验完成后不能覆盖新工作区',async()=>{
+  const old=globalThis.chrome;const h=createLatencyChrome();globalThis.chrome=h.api;
+  let release;
+  try {
+    await import(`../packages/controller/src/service-worker.mjs?staleFocus=${Date.now()}`);await turn();
+    h.api.windows.onFocusChanged.emit(-1);
+    h.api.windows.get=async id=>id===1?await new Promise(r=>{release=()=>r({id,focused:true,type:'normal'});}):{id,focused:true,type:'normal'};
+    h.api.tabs.query=async query=>[{id:query.windowId===8?99:1,active:true,windowId:query.windowId,
+      url:query.windowId===8?'https://example.invalid/':'https://www.bilibili.com/video/BVfake/'}];
+    h.immersive=true;h.api.tabs.onActivated.emit({tabId:1,windowId:1});await turn();
+    h.api.windows.onFocusChanged.emit(8);await turn();release();await turn();
+    assert.equal(h.enabled,false,'已失效的窗口核验不得把旧工作区恢复成前台');
+    h.api.tabs.onActivated.emit({tabId:99,windowId:8});await turn();assert.equal(h.enabled,false);
+  }finally{release?.();await turn();globalThis.chrome=old;}
+});
+
+test('切入观看页和切回普通页都从标签激活事件开始计时，普通页也保留有效起点',async()=>{
+  const old=globalThis.chrome;const h=createLatencyChrome();globalThis.chrome=h.api;
+  try {
+    await import(`../packages/controller/src/service-worker.mjs?activationTiming=${Date.now()}`);await turn();
+    h.activeId=2;h.api.tabs.onActivated.emit({tabId:2,windowId:1});await turn();
+    const start=Date.now();h.activeId=1;h.immersive=true;
+    h.api.tabs.onActivated.emit({tabId:1,windowId:1});await turn();
+    const entering=h.diagnostics.findLast(v=>v.watchLatency)?.watchLatency;
+    assert.equal(entering.enabled,true);assert.ok(entering.eventAt>=start,'切标签没有页面报告时仍需测量调度等待');
+    h.activeId=2;h.api.tabs.onActivated.emit({tabId:2,windowId:1});await turn();
+    const leaving=h.diagnostics.findLast(v=>v.watchLatency)?.watchLatency;
+    assert.equal(leaving.enabled,false);assert.ok(Number.isFinite(leaving.eventAt));
+    assert.ok(Number.isFinite(leaving.eventToApiDoneMs));
+  }finally{await turn();globalThis.chrome=old;}
+});
+
+test('同标签的新报告取消旧查询后，仍保留首次激活时间而非只计最后一轮',async()=>{
+  const old=globalThis.chrome;const h=createLatencyChrome();globalThis.chrome=h.api;
+  let release;let first=true;
+  try {
+    await import(`../packages/controller/src/service-worker.mjs?canceledTiming=${Date.now()}`);await turn();
+    h.api.tabs.sendMessage=async()=>{
+      if(first){first=false;await new Promise(r=>{release=r;});}
+      return {type:'edge-theme-watch-state',immersive:true,episode:'page:1'};
+    };
+    h.api.tabs.onActivated.emit({tabId:1,windowId:1});await turn();
+    await new Promise(resolve=>setTimeout(resolve,30));
+    const reportedAt=Date.now();h.api.runtime.onMessage.emit({type:'edge-theme-watch-state',sentAt:reportedAt},
+      {frameId:0,url:'https://www.bilibili.com/video/BVfake/',tab:{id:1,active:true,windowId:1}},()=>{});
+    await turn();assert.equal(h.enabled,true);
+    const latency=h.diagnostics.findLast(v=>v.watchLatency)?.watchLatency;
+    assert.ok(latency.eventAt<=reportedAt-20,'被取消轮次中的等待也属于用户看到的切换延迟');
+  }finally{release?.();await turn();globalThis.chrome=old;}
+});
