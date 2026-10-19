@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, readdir } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import test from 'node:test';
 import { buildReleasePackages } from '../scripts/build-release.mjs';
 import { createHash } from 'node:crypto';
 
-test('Release 自动和手动包具有独立入口、最小权限、同一主题及完整安装文件', async () => {
+test('Release 自动和手动包具有独立入口、最小权限、同一主题及完整安装文件', async t => {
   const outputRoot = await mkdtemp(new URL('../.artifacts/release-test-', import.meta.url));
+  t.after(() => rm(outputRoot, { recursive: true, force: true }));
   const version = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
   const packages = await buildReleasePackages({ outputRoot });
   assert.deepEqual(packages.map(item => item.variant), ['auto', 'manual']);
@@ -31,6 +32,8 @@ test('Release 自动和手动包具有独立入口、最小权限、同一主题
     assert.deepEqual(await readFile(path.join(item.directory, 'packages/theme-dark.crx')),
       await readFile(new URL('../packages/theme-dark.crx', import.meta.url)));
     assert.ok((await readFile(path.join(item.directory, '安装说明.md'), 'utf8')).includes('二选一'));
+    assert.equal(await readFile(path.join(item.directory, 'LICENSE'), 'utf8'),
+      await readFile(new URL('../LICENSE', import.meta.url), 'utf8'));
     assert.ok((await readFile(path.join(item.directory, 'scripts/install-theme-policy.ps1'), 'utf8')).includes('normal_installed'));
     assert.equal((await readFile(item.archive)).readUInt32LE(), 0x04034b50);
     const digest = createHash('sha256').update(await readFile(item.archive)).digest('hex');

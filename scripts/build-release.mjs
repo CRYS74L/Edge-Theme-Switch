@@ -47,6 +47,7 @@ export async function buildReleasePackages({ outputRoot = path.join(root, '.arti
       }
     }
     await copyFile(path.join(root, 'packages/theme-dark.crx'), path.join(directory, 'packages/theme-dark.crx'));
+    await copyFile(path.join(root, 'LICENSE'), path.join(directory, 'LICENSE'));
     await copyFile(path.join(root, 'scripts/install-theme-policy.ps1'), path.join(directory, 'scripts/install-theme-policy.ps1'));
     const label = variant === 'auto' ? '自动切换版：手动按钮 + B站／YouTube 当前标签自动切换。'
       : '纯手动版：仅太阳按钮切换，不申请网站访问权限，不包含页面检测脚本。';

@@ -1,7 +1,8 @@
 {
   "name": "edge-browser-theme-toggle",
   "private": true,
-  "version": "1.1.1-dev.4",
+  "version": "1.1.1-dev.7",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "release:build": "node scripts/build-release.mjs",
