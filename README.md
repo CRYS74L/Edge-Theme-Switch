@@ -24,7 +24,7 @@
 
 ## 下载与版本选择
 
-前往 [Release 下载页](https://github.com/CRYS74L/Edge-Theme-Switch/releases/latest)，在 Assets 中选择一个 ZIP：
+当前发行版为 **v1.1.1**。前往 [Release 下载页](https://github.com/CRYS74L/Edge-Theme-Switch/releases/latest)，在 Assets 中选择一个 ZIP：
 
 | 版本 | 适合谁 | 功能 |
 | --- | --- | --- |
@@ -90,6 +90,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\install-theme-pol
 主题会共同作用于同一浏览器配置中的窗口，无法让每个标签或窗口各自使用一套主题。
 
 ## 更新或更换版本
+
+从旧版升级到 v1.1.1 时，更新控制扩展后，还需将新包中的 `packages/theme-dark.crx` 拖入扩展页一次，将主题组件同步更新到 1.1.1。已设置的主题保留策略可以继续使用。
 
 - **更新控制扩展：** 用新包的 `packages/controller` 替换原目录中的对应文件，再到 `edge://extensions` 点击“重新加载”；如有新增权限提示，确认后生效。
 - **更新深色主题：** 仅在新版说明要求更新主题时，重新拖入新包中的 `packages/theme-dark.crx`。单独重新加载控制扩展不会更新已安装的主题。

@@ -1,5 +1,5 @@
 export const DARK_THEME_NAME = 'Edge 外观一键切换 - 深色主题';
-export const DARK_THEME_VERSION = '1.0.0.6';
+export const DARK_THEME_VERSION = '1.1.1';
 
 export function isDarkTheme(theme) {
   // Keep installed themes usable while the controller and CRX update separately.

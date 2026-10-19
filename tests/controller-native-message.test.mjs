@@ -10,7 +10,7 @@ function createFakeChrome(initialThemes) {
   const enabledCalls = [];
   const startupListeners = [];
   const installedListeners = [];
-  const themes = initialThemes.map((theme) => ({ version: '1.0.0.6', ...theme }));
+  const themes = initialThemes.map((theme) => ({ version: '1.1.1', ...theme }));
 
   return {
     chrome: {
@@ -53,7 +53,7 @@ function createFakeChrome(initialThemes) {
       },
       runtime: {
         getManifest() {
-          return { version: '1.0.0.6' };
+          return { version: '1.1.1' };
         },
         getURL(path) {
           return path;
@@ -276,13 +276,13 @@ test('重载控制器后仍会识别旧主题版本，并保留正常切换能�
   await withWorker(fake, 'theme-version-mismatch', async () => {
     await fake.installedListeners[0]();
     assert.equal(fake.titleCalls.at(-1).title,
-      '主题未更新：当前 1.0.0.1，需要 1.0.0.6');
+      '主题未更新：当前 1.0.0.1，需要 1.1.1');
     assert.deepEqual(fake.enabledCalls, []);
 
     await fake.clickListeners[0]();
     assert.deepEqual(fake.enabledCalls, [{ id: 'edge-dark-theme', enabled: true }]);
     assert.equal(fake.titleCalls.at(-1).title,
-      '主题未更新：当前 1.0.0.1，需要 1.0.0.6');
+      '主题未更新：当前 1.0.0.1，需要 1.1.1');
   });
 });
 

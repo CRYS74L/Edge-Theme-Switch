@@ -4,7 +4,7 @@ const turn = () => new Promise(setImmediate);
 function event(){const handlers=[];return {addListener(fn){handlers.push(fn);},emit(...args){return handlers.map(fn=>fn(...args));}};}
 export function createLatencyChrome() {
   const trace=[];const diagnostics=[];let enabled=false;let immersive=false;let hold=false;let release;
-  const theme=()=>({id:'dark',name:'Edge 外观一键切换 - 深色主题',version:'1.0.0.6',type:'theme',enabled});
+  const theme=()=>({id:'dark',name:'Edge 外观一键切换 - 深色主题',version:'1.1.1',type:'theme',enabled});
   let activeId=1;
   const api={
     runtime:{getManifest:()=>({version:'1.1.0.1',host_permissions:['https://www.bilibili.com/*']}),getURL:p=>p,onStartup:event(),onInstalled:event(),onMessage:event()},
@@ -39,7 +39,7 @@ test('缓存只保存主题身份，主题被移除或换ID后仍重新发现', 
     await import(`../packages/controller/src/service-worker.mjs?rediscover=${Date.now()}`);await turn();h.trace.length=0;
     const oldGet=h.api.management.get;
     h.api.management.get=async id=>{if(id==='dark')throw Error('removed');return {...await oldGet(id),id};};
-    h.api.management.getAll=async()=>{h.trace.push('rediscover');return [{id:'replacement',type:'theme',name:'Edge 外观一键切换 - 深色主题',version:'1.0.0.6',enabled:false}];};
+    h.api.management.getAll=async()=>{h.trace.push('rediscover');return [{id:'replacement',type:'theme',name:'Edge 外观一键切换 - 深色主题',version:'1.1.1',enabled:false}];};
     h.immersive=true;h.api.tabs.onActivated.emit({tabId:1});await turn();
     assert.equal(h.enabled,true);assert.ok(h.trace.includes('rediscover'));
   } finally {await turn();globalThis.chrome=old;}
