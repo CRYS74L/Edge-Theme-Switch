@@ -10,11 +10,11 @@
 
 **浅色外观**
 
-![Edge 浅色外观：浅色顶栏、工具栏、地址栏及垂直标签栏](docs/images/edge-theme-switch-light-20261019.png)
+![Edge 浅色外观：浅色顶栏、工具栏、地址栏及垂直标签栏](docs/images/edge-theme-switch-light-header.png)
 
 **一键切换后的深色外观**
 
-![Edge 深色外观：深色顶栏、灰色工具栏、地址栏及垂直标签栏，网页保持原样](docs/images/edge-theme-switch-dark-20261019.png)
+![Edge 深色外观：深色顶栏、灰色工具栏、地址栏及垂直标签栏，网页保持原样](docs/images/edge-theme-switch-dark-header.png)
 
 ## 下载与版本选择
 
