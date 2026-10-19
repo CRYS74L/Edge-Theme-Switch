@@ -4,7 +4,7 @@ const turn = () => new Promise(setImmediate);
 function event(){const handlers=[];return {addListener(fn){handlers.push(fn);},emit(...args){return handlers.map(fn=>fn(...args));}};}
 export function createLatencyChrome() {
   const trace=[];const diagnostics=[];let enabled=false;let immersive=false;let hold=false;let release;
-  const theme=()=>({id:'dark',name:'Edge 外观切换 - 深色主题',version:'1.0.0.5',type:'theme',enabled});
+  const theme=()=>({id:'dark',name:'Edge 外观一键切换 - 深色主题',version:'1.0.0.6',type:'theme',enabled});
   let activeId=1;
   const api={
     runtime:{getManifest:()=>({version:'1.1.0.1',host_permissions:['https://www.bilibili.com/*']}),getURL:p=>p,onStartup:event(),onInstalled:event(),onMessage:event()},
@@ -12,7 +12,7 @@ export function createLatencyChrome() {
     windows:{getLastFocused:async()=>{trace.push('window');return {id:1};},onFocusChanged:event(),WINDOW_ID_NONE:-1},
     tabs:{query:async()=>{trace.push('activeTab');return [{id:activeId,url:activeId===1?'https://www.bilibili.com/video/BVfake/':'https://example.invalid/'}];},sendMessage:async()=>{trace.push('playerQuery');return {type:'edge-theme-watch-state',immersive,episode:'page:1'};},onActivated:event(),onUpdated:event(),onRemoved:event()},
     storage:{session:{get:async()=>{trace.push('ownershipRead');return {};},set:async()=>{trace.push('ownershipWrite');}},local:{set:async value=>{trace.push('diagnostic');diagnostics.push(structuredClone(value));if(hold)await new Promise(r=>{release=r;});}}},
-    management:{getAll:async()=>{trace.push('themes');return [theme()];},get:async()=>{trace.push('themeReadback');return theme();},setEnabled:async(id,value)=>{trace.push('themeApply');enabled=value;api.management[value?'onEnabled':'onDisabled'].emit({id,name:'Edge 外观切换 - 深色主题',type:'theme'});},onEnabled:event(),onDisabled:event()},
+    management:{getAll:async()=>{trace.push('themes');return [theme()];},get:async()=>{trace.push('themeReadback');return theme();},setEnabled:async(id,value)=>{trace.push('themeApply');enabled=value;api.management[value?'onEnabled':'onDisabled'].emit({id,name:'Edge 外观一键切换 - 深色主题',type:'theme'});},onEnabled:event(),onDisabled:event()},
   };
   return {api,trace,diagnostics,get enabled(){return enabled;},set immersive(v){immersive=v;},set activeId(v){activeId=v;},holdDiagnostics(){hold=true;},releaseDiagnostics(){hold=false;release?.();}};
 }
@@ -39,7 +39,7 @@ test('缓存只保存主题身份，主题被移除或换ID后仍重新发现', 
     await import(`../packages/controller/src/service-worker.mjs?rediscover=${Date.now()}`);await turn();h.trace.length=0;
     const oldGet=h.api.management.get;
     h.api.management.get=async id=>{if(id==='dark')throw Error('removed');return {...await oldGet(id),id};};
-    h.api.management.getAll=async()=>{h.trace.push('rediscover');return [{id:'replacement',type:'theme',name:'Edge 外观切换 - 深色主题',version:'1.0.0.5',enabled:false}];};
+    h.api.management.getAll=async()=>{h.trace.push('rediscover');return [{id:'replacement',type:'theme',name:'Edge 外观一键切换 - 深色主题',version:'1.0.0.6',enabled:false}];};
     h.immersive=true;h.api.tabs.onActivated.emit({tabId:1});await turn();
     assert.equal(h.enabled,true);assert.ok(h.trace.includes('rediscover'));
   } finally {await turn();globalThis.chrome=old;}

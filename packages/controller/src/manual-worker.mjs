@@ -1,5 +1,5 @@
 // Release entry point for the management-only edition. No page APIs or observers.
-import { ACTION_ICON_PATHS, ACTION_TITLES, DARK_THEME_NAME } from './constants.mjs';
+import { ACTION_ICON_PATHS, ACTION_TITLES, DARK_THEME_VERSION, isDarkTheme } from './constants.mjs';
 import { createPresentationQueue } from './action-presentation.mjs';
 
 let operationTail = Promise.resolve();
@@ -22,13 +22,13 @@ class ThemeAvailabilityError extends Error {}
 
 function showTheme(theme) {
   const mode = theme.enabled ? 'dark' : 'light';
-  const title = theme.version === '1.0.0.5' ? ACTION_TITLES[mode]
-    : `主题未更新：当前 ${theme.version}，需要 1.0.0.5`;
+  const title = theme.version === DARK_THEME_VERSION ? ACTION_TITLES[mode]
+    : `主题未更新：当前 ${theme.version}，需要 ${DARK_THEME_VERSION}`;
   void presentation.request({ key: `${mode}:${title}`, title, mode });
 }
 
 function showFailure(error) {
-  console.error('Edge 整体外观切换失败。', error);
+  console.error('Edge 外观一键切换失败。', error);
   const title = error instanceof ThemeAvailabilityError ? ACTION_TITLES.themesUnavailable : ACTION_TITLES.failed;
   void presentation.request({ key: `error:${title}`, title });
 }
@@ -43,12 +43,12 @@ async function getTheme() {
   if (knownThemeId) {
     try {
       const current = await chrome.management.get(knownThemeId);
-      if (current?.type === 'theme' && current.name === DARK_THEME_NAME) return current;
+      if (isDarkTheme(current)) return current;
     }
     catch { /* Rediscover a removed/reinstalled theme below. */ }
     knownThemeId = undefined;
   }
-  const theme = (await chrome.management.getAll()).find(item => item.type === 'theme' && item.name === DARK_THEME_NAME);
+  const theme = (await chrome.management.getAll()).find(isDarkTheme);
   if (!theme) throw new ThemeAvailabilityError('Dark theme package is not installed.');
   knownThemeId = theme.id;
   return theme;
@@ -78,6 +78,6 @@ chrome.management?.onEnabled?.addListener(theme => {
   if (theme.type === 'theme') void enqueue(synchronize);
 });
 chrome.management?.onDisabled?.addListener(theme => {
-  if (theme.type === 'theme' && theme.name === DARK_THEME_NAME) void enqueue(synchronize);
+  if (isDarkTheme(theme)) void enqueue(synchronize);
 });
 void enqueue(synchronize);

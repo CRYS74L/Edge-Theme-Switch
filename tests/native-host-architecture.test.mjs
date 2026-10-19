@@ -29,7 +29,7 @@ test('深色主题包是唯一的无脚本主题组件', async () => {
   const theme = JSON.parse(await readProjectFile('packages/theme-dark/manifest.json'));
 
   assert.equal(theme.manifest_version, 2);
-  assert.equal(theme.name, 'Edge 外观切换 - 深色主题');
+  assert.equal(theme.name, 'Edge 外观一键切换 - 深色主题');
   assert.equal(theme.background, undefined);
   assert.equal(theme.permissions, undefined);
   assert.ok(theme.theme?.colors);

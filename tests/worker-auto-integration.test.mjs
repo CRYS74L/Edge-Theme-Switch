@@ -10,8 +10,8 @@ test('实际 worker 事件链：页面报告、标签切换、手动按钮和 wo
     action:{setIcon:async()=>{},setTitle:async()=>{},onClicked:event()},
     storage:{session:{get:async key=>({[key]:session[key]}),set:async value=>Object.assign(session,structuredClone(value))},local:{set:async value=>Object.assign(local,structuredClone(value))}},
     runtime:{getManifest:()=>({version:'1.1.0.1',host_permissions:['https://www.bilibili.com/*']}),getURL:p=>p,onStartup:event(),onInstalled:event(),onMessage:event()},
-    management:{getAll:async()=>[{id:'dark',type:'theme',name:'Edge 外观切换 - 深色主题',version:'1.0.0.5',enabled}],get:async()=>({enabled}),
-      setEnabled:async(id,value)=>{enabled=value;calls.push(value);chrome.management[value?'onEnabled':'onDisabled'].emit({id,type:'theme',name:'Edge 外观切换 - 深色主题'});},onEnabled:event(),onDisabled:event()},
+    management:{getAll:async()=>[{id:'dark',type:'theme',name:'Edge 外观一键切换 - 深色主题',version:'1.0.0.6',enabled}],get:async()=>({enabled}),
+      setEnabled:async(id,value)=>{enabled=value;calls.push(value);chrome.management[value?'onEnabled':'onDisabled'].emit({id,type:'theme',name:'Edge 外观一键切换 - 深色主题'});},onEnabled:event(),onDisabled:event()},
     windows:{getLastFocused:async()=>({id:7}),onFocusChanged:event(),WINDOW_ID_NONE:-1},
     tabs:{query:async()=>[active],sendMessage:async()=>({type:'edge-theme-watch-state',immersive:active.immersive,episode:active.episode}),onActivated:event(),onUpdated:event(),onRemoved:event()},
   };

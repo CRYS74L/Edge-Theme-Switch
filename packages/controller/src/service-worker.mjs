@@ -2,6 +2,8 @@ import {
   ACTION_ICON_PATHS,
   ACTION_TITLES,
   DARK_THEME_NAME,
+  DARK_THEME_VERSION,
+  isDarkTheme,
 } from './constants.mjs';
 import { createAutoMode } from './auto-mode.mjs';
 import { activeWatchContext, isWatchSite } from './watch-context.mjs';
@@ -151,9 +153,7 @@ function enqueueWithPresentation(operation) {
 }
 
 function findDarkTheme(themes) {
-  return themes.find((theme) => (
-    theme.type === 'theme' && theme.name === DARK_THEME_NAME
-  ));
+  return themes.find(isDarkTheme);
 }
 
 function resolveActionIconPaths(mode) {
@@ -165,7 +165,7 @@ function resolveActionIconPaths(mode) {
 }
 
 function setActionPresentation(mode, themeVersion) {
-  const expectedVersion = '1.0.0.5'; // Appearance package stays at the user-accepted dev.5.
+  const expectedVersion = DARK_THEME_VERSION;
   const title = themeVersion === expectedVersion
     ? ACTION_TITLES[mode]
     : `主题未更新：当前 ${themeVersion}，需要 ${expectedVersion}`;
@@ -186,7 +186,7 @@ async function getDarkTheme() {
     if (knownThemeId) {
       try {
         const current = await chrome.management.get(knownThemeId);
-        if (current?.type === 'theme' && current.name === DARK_THEME_NAME) return current;
+        if (isDarkTheme(current)) return current;
       }
       catch { /* Removed/reinstalled themes are rediscovered below. */ }
       knownThemeId = undefined;
@@ -240,7 +240,7 @@ async function performToggle() {
     await autoMode.manual();
   }
   catch (error) {
-    console.error('Edge 整体外观切换失败。', error);
+    console.error('Edge 外观一键切换失败。', error);
     void setActionFailure(error);
   }
 }
@@ -359,7 +359,7 @@ chrome.windows?.onFocusChanged?.addListener(id => {
 function themeEvent(theme, enabled) {
   const index = expectedThemeEvents.findIndex(item => item.id === theme.id && item.enabled === enabled);
   if (index !== -1) { expectedThemeEvents.splice(index, 1); return; }
-  if (theme.type !== 'theme' || (!enabled && theme.name !== DARK_THEME_NAME)) return;
+  if (theme.type !== 'theme' || (!enabled && !isDarkTheme(theme))) return;
   void enqueue(async () => { await autoMode.externalChange(); await synchronizeActionPresentation(); });
 }
 chrome.management?.onEnabled?.addListener(theme => themeEvent(theme, true));

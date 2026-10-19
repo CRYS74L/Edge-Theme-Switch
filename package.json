@@ -1,10 +1,11 @@
 {
-  "name": "edge-browser-theme-toggle",
+  "name": "edge-theme-switch",
   "private": true,
-  "version": "1.1.1-dev.7",
+  "version": "1.1.1-dev.8",
   "license": "MIT",
   "type": "module",
   "scripts": {
+    "theme:pack": "node scripts/pack-theme.mjs",
     "release:build": "node scripts/build-release.mjs",
     "test": "node --test tests/*.test.mjs",
     "test:action": "node --test tests/controller-native-message.test.mjs",

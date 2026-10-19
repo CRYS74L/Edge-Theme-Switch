@@ -10,7 +10,7 @@ function createFakeChrome(initialThemes) {
   const enabledCalls = [];
   const startupListeners = [];
   const installedListeners = [];
-  const themes = initialThemes.map((theme) => ({ version: '1.0.0.5', ...theme }));
+  const themes = initialThemes.map((theme) => ({ version: '1.0.0.6', ...theme }));
 
   return {
     chrome: {
@@ -53,7 +53,7 @@ function createFakeChrome(initialThemes) {
       },
       runtime: {
         getManifest() {
-          return { version: '1.0.0.5' };
+          return { version: '1.0.0.6' };
         },
         getURL(path) {
           return path;
@@ -99,7 +99,7 @@ async function withWorker(fake, marker, operation, workerUrl = serviceWorkerUrl)
 
 test('纯手动入口不需要页面API，连续点击可切换深浅且不自动切换', async () => {
   const fake = createFakeChrome([
-    { id: 'edge-dark-theme', name: 'Edge 外观切换 - 深色主题', type: 'theme', enabled: false },
+    { id: 'edge-dark-theme', name: 'Edge 外观一键切换 - 深色主题', type: 'theme', enabled: false },
   ]);
   const manualUrl = new URL('../packages/controller/src/manual-worker.mjs', import.meta.url).href;
   await withWorker(fake, 'manual-only', async () => {
@@ -116,7 +116,7 @@ test('纯手动入口不需要页面API，连续点击可切换深浅且不自�
 
 test('手动版图标更新挂起不阻塞下一次点击，最终图标与实际主题一致', async () => {
   const fake = createFakeChrome([
-    { id: 'edge-dark-theme', name: 'Edge 外观切换 - 深色主题', type: 'theme', enabled: false },
+    { id: 'edge-dark-theme', name: 'Edge 外观一键切换 - 深色主题', type: 'theme', enabled: false },
   ]);
   const manualUrl = new URL('../packages/controller/src/manual-worker.mjs', import.meta.url).href;
   let release; let hold = true;
@@ -148,7 +148,7 @@ test('手动版主题缺失和状态回读失败均显示错误，不伪报切�
       assert.equal(missing.titleCalls.at(-1).title, '主题组件未加载：请加载深色主题包');
     }, manualUrl);
     const failed = createFakeChrome([
-      { id: 'edge-dark-theme', name: 'Edge 外观切换 - 深色主题', type: 'theme', enabled: false },
+      { id: 'edge-dark-theme', name: 'Edge 外观一键切换 - 深色主题', type: 'theme', enabled: false },
     ]);
     failed.chrome.management.setEnabled = async () => {};
     await withWorker(failed, 'manual-readback-failed', async () => {
@@ -161,7 +161,7 @@ test('手动版主题缺失和状态回读失败均显示错误，不伪报切�
 
 test('工具栏单击停用深色主题即可回到 Edge 内置浅色外观', async () => {
   const fake = createFakeChrome([
-    { id: 'edge-dark-theme', name: 'Edge 外观切换 - 深色主题', type: 'theme', enabled: true },
+    { id: 'edge-dark-theme', name: 'Edge 外观一键切换 - 深色主题', type: 'theme', enabled: true },
   ]);
 
   await withWorker(fake, 'management-success', async () => {
@@ -184,7 +184,7 @@ test('工具栏单击停用深色主题即可回到 Edge 内置浅色外观', as
 
 test('快速连续两次单击会串行启用和停用深色主题', async () => {
   const fake = createFakeChrome([
-    { id: 'edge-dark-theme', name: 'Edge 外观切换 - 深色主题', type: 'theme', enabled: false },
+    { id: 'edge-dark-theme', name: 'Edge 外观一键切换 - 深色主题', type: 'theme', enabled: false },
   ]);
   let activeRequests = 0;
   let maximumActiveRequests = 0;
@@ -225,7 +225,7 @@ test('快速连续两次单击会串行启用和停用深色主题', async () =>
 
 test('Edge 启动时会按已启用的深色主题同步浅色线性图标', async () => {
   const fake = createFakeChrome([
-    { id: 'edge-dark-theme', name: 'Edge 外观切换 - 深色主题', type: 'theme', enabled: true },
+    { id: 'edge-dark-theme', name: 'Edge 外观一键切换 - 深色主题', type: 'theme', enabled: true },
   ]);
 
   await withWorker(fake, 'startup-presentation', async () => {
@@ -269,26 +269,39 @@ test('深色主题包未加载时不会谎称 Edge 已切换', async () => {
 
 test('重载控制器后仍会识别旧主题版本，并保留正常切换能力', async () => {
   const fake = createFakeChrome([
-    { id: 'edge-dark-theme', name: 'Edge 外观切换 - 深色主题', type: 'theme',
+    { id: 'edge-dark-theme', name: 'Edge 外观一键切换 - 深色主题', type: 'theme',
       enabled: false, version: '1.0.0.1' },
   ]);
 
   await withWorker(fake, 'theme-version-mismatch', async () => {
     await fake.installedListeners[0]();
     assert.equal(fake.titleCalls.at(-1).title,
-      '主题未更新：当前 1.0.0.1，需要 1.0.0.5');
+      '主题未更新：当前 1.0.0.1，需要 1.0.0.6');
     assert.deepEqual(fake.enabledCalls, []);
 
     await fake.clickListeners[0]();
     assert.deepEqual(fake.enabledCalls, [{ id: 'edge-dark-theme', enabled: true }]);
     assert.equal(fake.titleCalls.at(-1).title,
-      '主题未更新：当前 1.0.0.1，需要 1.0.0.5');
+      '主题未更新：当前 1.0.0.1，需要 1.0.0.6');
   });
+});
+
+test('更名后自动版和手动版仍识别已安装的旧名称主题', async () => {
+  for (const entry of ['service-worker.mjs', 'manual-worker.mjs']) {
+    const fake = createFakeChrome([
+      { id: 'edge-dark-theme', name: 'Edge 外观切换 - 深色主题', type: 'theme',
+        enabled: false, version: '1.0.0.5' },
+    ]);
+    await withWorker(fake, `legacy-theme-${entry}`, async () => {
+      await fake.clickListeners[0]();
+      assert.deepEqual(fake.enabledCalls, [{ id: 'edge-dark-theme', enabled: true }]);
+    }, new URL(`../packages/controller/src/${entry}`, import.meta.url).href);
+  }
 });
 
 test('管理 API 失败时仍显示完整错误提示', async () => {
   const fake = createFakeChrome([
-    { id: 'edge-dark-theme', name: 'Edge 外观切换 - 深色主题', type: 'theme', enabled: true },
+    { id: 'edge-dark-theme', name: 'Edge 外观一键切换 - 深色主题', type: 'theme', enabled: true },
   ]);
   fake.chrome.management.setEnabled = async () => {
     throw new Error('management failure');

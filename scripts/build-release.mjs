@@ -19,7 +19,7 @@ export async function buildReleasePackages({ outputRoot = path.join(root, '.arti
   const buildRoot = await mkdtemp(path.join(outputRoot, `${pkg.version}-`));
   const packages = [];
   for (const variant of ['auto', 'manual']) {
-    const name = `edge-browser-theme-toggle-v${pkg.version}-${variant}`;
+    const name = `Edge-Theme-Switch-v${pkg.version}-${variant}`;
     const directory = path.join(buildRoot, name);
     const controller = path.join(directory, 'packages/controller');
     await mkdir(path.join(controller, 'src'), { recursive: true });
@@ -28,8 +28,7 @@ export async function buildReleasePackages({ outputRoot = path.join(root, '.arti
     const manifest = structuredClone(baseManifest);
     manifest.version_name = `${pkg.version}-${variant}`;
     if (variant === 'manual') {
-      manifest.name = 'Edge 浏览器外观切换（手动版）';
-      manifest.description = '单击太阳按钮切换 Edge 深色和浅色外观；不检测网页、不自动切换。';
+      manifest.description = '一键切换 Edge 浅色与深色外观；不检测网页、不自动切换。';
       manifest.permissions = ['management'];
       manifest.background.service_worker = 'src/manual-worker.mjs';
       delete manifest.host_permissions;
@@ -51,7 +50,7 @@ export async function buildReleasePackages({ outputRoot = path.join(root, '.arti
     await copyFile(path.join(root, 'scripts/install-theme-policy.ps1'), path.join(directory, 'scripts/install-theme-policy.ps1'));
     const label = variant === 'auto' ? '自动切换版：手动按钮 + B站／YouTube 当前标签自动切换。'
       : '纯手动版：仅太阳按钮切换，不申请网站访问权限，不包含页面检测脚本。';
-    await writeFile(path.join(directory, '安装说明.md'), `# Edge 浏览器外观切换 ${pkg.version}\n\n${label}\n\n${instructions}`);
+    await writeFile(path.join(directory, '安装说明.md'), `# Edge 外观一键切换 ${pkg.version}\n\n${label}\n\n${instructions}`);
     const archive = path.join(buildRoot, `${name}.zip`);
     await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
       '-File', path.join(root, 'scripts/compress-release.ps1'), '-SourceDirectory', directory, '-DestinationZip', archive]);

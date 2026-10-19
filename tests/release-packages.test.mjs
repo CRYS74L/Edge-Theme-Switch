@@ -15,6 +15,8 @@ test('Release 自动和手动包具有独立入口、最小权限、同一主题
   for (const item of packages) {
     const controller = path.join(item.directory, 'packages/controller');
     const manifest = JSON.parse(await readFile(path.join(controller, 'manifest.json'), 'utf8'));
+    assert.equal(manifest.name, 'Edge 外观一键切换');
+    assert.ok(path.basename(item.archive).startsWith('Edge-Theme-Switch-v'));
     assert.equal(manifest.version_name, `${version}-${item.variant}`);
     const modules = await readdir(path.join(controller, 'src'));
     if (item.variant === 'manual') {
