@@ -10,6 +10,10 @@ export function isWatchSite(url) {
   catch { return false; }
 }
 
+function hasNoLastFocusedWindow(error) {
+  return /\bno last-focused window\b/i.test(String(error?.message || error));
+}
+
 export async function activeWatchContext(api, expectedTabIds, options = {}) {
   if (!api.tabs || !api.windows) return null;
   const started = performance.now();
@@ -28,9 +32,19 @@ export async function activeWatchContext(api, expectedTabIds, options = {}) {
     catch { /* Closed or moved tab: rediscover the foreground below. */ }
   }
   if (!tab) {
-    const window = options.foreground?.windowId !== undefined && api.windows.get
-      ? await api.windows.get(options.foreground.windowId)
-      : await api.windows.getLastFocused({ windowTypes: ['normal'] });
+    let window;
+    try {
+      window = options.foreground?.windowId !== undefined && api.windows.get
+        ? await api.windows.get(options.foreground.windowId)
+        : await api.windows.getLastFocused({ windowTypes: ['normal'] });
+    }
+    catch (error) {
+      if (options.foreground?.windowId === undefined && hasNoLastFocusedWindow(error)) {
+        options.observe?.({ focused: false });
+        return { ignored: true };
+      }
+      throw error;
+    }
     windowId = window.id;
     if (window.type && window.type !== 'normal') return { ignored: true };
     if (options.requireFocused && window.focused === false) {

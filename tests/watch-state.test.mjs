@@ -128,6 +128,30 @@ test('已知前台按ID读取并验证active和窗口，不枚举标签；失效
   assert.equal((await activeWatchContext(api,undefined,{foreground:known})).tabId,2);
   assert.deepEqual(calls,['get:1','window','query','sample:2']);
 });
+
+test('窗口切换瞬间没有最后聚焦窗口时静默忽略，不把正常状态记为自动切换失败', async () => {
+  let queried = false;
+  const observed = [];
+  const api = {
+    windows: {
+      getLastFocused: async () => { throw Error('No last-focused window'); },
+    },
+    tabs: {
+      query: async () => {
+        queried = true;
+        return [];
+      },
+    },
+  };
+
+  assert.deepEqual(await activeWatchContext(api, undefined, {
+    requireFocused: true,
+    observe: value => observed.push(value),
+  }), { ignored: true });
+  assert.equal(queried, false);
+  assert.deepEqual(observed, [{ focused: false }]);
+});
+
 test('普通页面节点变化和直播弹幕不触发采样；单页导航和播放器替换仍会重新绑定',()=>{
   for(const url of ['https://live.bilibili.com/blanc/123','https://www.youtube.com/watch?v=one']){
     const p=page(url);p.flush();p.reports.length=0;
