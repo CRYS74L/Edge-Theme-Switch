@@ -2,7 +2,7 @@ export function isWatchSite(url) {
   try {
     const parsed = new URL(url);
     return parsed.protocol === 'https:' && (
-      (parsed.hostname === 'www.bilibili.com' && parsed.pathname.startsWith('/video/')) ||
+      parsed.hostname === 'www.bilibili.com' ||
       parsed.hostname === 'live.bilibili.com' ||
       ['www.youtube.com', 'youtube.com'].includes(parsed.hostname)
     );

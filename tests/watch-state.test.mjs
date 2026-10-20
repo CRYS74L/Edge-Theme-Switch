@@ -4,13 +4,14 @@ import vm from 'node:vm';
 import test from 'node:test';
 import { activeWatchContext, isWatchSite } from '../packages/controller/src/watch-context.mjs';
 const source = await readFile(new URL('../packages/controller/src/watch-state.js', import.meta.url), 'utf8');
-function page(url, { visibility = 'visible' } = {}) {
+function page(url, { visibility = 'visible', biliPlayerPresent = true, biliMountPresent = false } = {}) {
   const queryListeners = []; const reports = [];
   const observers=[];const microtasks=[];const listeners=new Map();
   const body = { screen: 'normal', theater: false, hidden: false, visibility };
   const rootNode={isConnected:true,parentElement:null};
   let playerParent={isConnected:true,parentElement:rootNode};
-  let biliPlayer={isConnected:true,parentElement:playerParent,getAttribute:()=>body.screen};
+  const biliMount=biliMountPresent ? {isConnected:true,parentElement:playerParent} : null;
+  let biliPlayer=biliPlayerPresent ? {isConnected:true,parentElement:biliMount || playerParent,getAttribute:()=>body.screen} : null;
   const ytPlayer={isConnected:true,get hidden(){return body.hidden;},hasAttribute:name=>name==='theater'&&body.theater};
   const location = { href: url };
   const context = { URL, location, crypto: { randomUUID: () => 'doc' },
@@ -21,16 +22,17 @@ function page(url, { visibility = 'visible' } = {}) {
     document: { documentElement: rootNode, get visibilityState(){return body.visibility;},
       addEventListener(name,fn){listeners.set(name,fn);}, removeEventListener(name){listeners.delete(name);}, querySelector(selector) {
       if (selector === '.bpx-player-container') return biliPlayer;
+      if (selector === '#bilibili-player') return biliMount;
       if (selector === 'ytd-watch-flexy') return ytPlayer;
       return null;
     } },
     chrome: { runtime: { onMessage: { addListener(fn) { queryListeners.push(fn); } },
       async sendMessage(value) { reports.push(value); return { ok: true }; } } } };
   vm.runInNewContext(source, context);
-  return { body, location, reports, observers, microtasks, get biliPlayer(){return biliPlayer;}, ytPlayer, listeners,
+  return { body, location, reports, observers, microtasks, get biliPlayer(){return biliPlayer;}, biliMount, ytPlayer, listeners,
     replaceBili(){biliPlayer.isConnected=false;biliPlayer={isConnected:true,parentElement:playerParent,getAttribute:()=>body.screen};},
     removeBili(){biliPlayer.isConnected=false;biliPlayer=null;},
-    createBili(){biliPlayer={isConnected:true,parentElement:playerParent,getAttribute:()=>body.screen};},
+    createBili(){biliPlayer={isConnected:true,parentElement:biliMount || playerParent,getAttribute:()=>body.screen};},
     reparentBili(){playerParent={isConnected:true,parentElement:rootNode};biliPlayer.parentElement=playerParent;},
     flush(){while(microtasks.length)microtasks.shift()();},
     read() { let value; queryListeners[0]({type:'edge-theme-watch-query'}, {}, v => { value = v; }); return value; } };
@@ -142,6 +144,38 @@ test('B站只在网页全屏触发；退出再进入会创建新观看段', () =
   assert.equal(p.read().episode, first.episode);
   p.body.screen = 'wide'; assert.equal(p.read().immersive, false);
   p.body.screen = 'web'; assert.notEqual(p.read().episode, first.episode);
+});
+test('B站活动视频页在网页全屏时也触发，静态活动页不触发', () => {
+  const activity = 'https://www.bilibili.com/festival/COLMO2026?bvid=BV1ydeX65Edn';
+  const p = page(activity);
+  assert.equal(isWatchSite(activity), true);
+  assert.equal(p.read().immersive, false);
+  p.body.screen = 'web';
+  assert.equal(p.read().immersive, true);
+  p.body.screen = 'normal';
+  p.removeBili();
+  assert.equal(p.read().immersive, false);
+});
+test('B站活动页等待已有播放器挂载点，再绑定延后创建的播放器', () => {
+  const p = page('https://www.bilibili.com/festival/COLMO2026?bvid=BV1ydeX65Edn', {
+    biliPlayerPresent: false,
+    biliMountPresent: true,
+  });
+  p.flush();
+  assert.equal(p.observers[1].target, p.biliMount);
+  p.createBili();
+  p.observers[1].callback();
+  p.flush();
+  p.body.screen = 'web';
+  p.observers[0].callback();
+  p.flush();
+  assert.equal(p.reports.at(-1).immersive, true);
+});
+test('没有播放器的普通 B 站页面不保持整页 DOM 观察', () => {
+  const p = page('https://www.bilibili.com/festival/plain', { biliPlayerPresent: false });
+  p.flush();
+  assert.equal(p.observers[1].connected, false);
+  assert.equal(p.read().immersive, false);
 });
 test('B站直播仅数字房间路径触发，首页与活动页不触发', () => {
   for (const url of ['https://live.bilibili.com/12345?broadcast_type=0','https://live.bilibili.com/12345/','https://live.bilibili.com/blanc/12345']) assert.equal(page(url).read().immersive, true);

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Edge 外观一键切换",
-  "version": "1.1.1.14",
-  "version_name": "1.1.1-auto",
+  "version": "1.1.2.1",
+  "version_name": "1.1.2-dev.1-auto",
   "description": "一键切换 Edge 浅色与深色外观；B站网页全屏、直播间及 YouTube 影院模式自动进入深色，离开时仅撤销自动切换。",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEApiJO/1SneyUezP9SuBEp3zz+pRoN26o1/A27IkfvI36o78XWdUioiB1l6AVMd2eptQRSt3SLxJ7jfWjiP34Qwyuc4ZOs0iLJYiHg+UOvekwtk0q9UAeu8IpgOAAsqHrXpI7SI7BUzkt8DAhif0oyErpF2wTLDSL8fSAcWIX3to5bZBx8Ph2hW5NHwkOuvvbooGR8bHU3gaYWmIy/BzohICgyXI2GbyPUqdFZi2u7pGbW7eiEQvVYTvLoLNdtY8OljmM2PpyGNjrC4LUAkpa3BrgLh7/RNpljRan3PRk7yHQjU8V7fr7tJgVaRxoJEJvh7wdHfb0LVyISY+pyaF8WWQIDAQAB",
   "permissions": [
@@ -32,7 +32,7 @@
   "content_scripts": [
     {
       "matches": [
-        "https://www.bilibili.com/video/*",
+        "https://www.bilibili.com/*",
         "https://live.bilibili.com/*",
         "https://www.youtube.com/*",
         "https://youtube.com/*"

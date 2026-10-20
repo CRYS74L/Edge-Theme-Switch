@@ -12,17 +12,19 @@
   let disconnected = false;
   let awaitingReplacement = false;
   let hiddenAncestors = [];
+  let discoveryRoot;
   const visible = () => document.visibilityState !== 'hidden';
+  const pageKey = url => `${url.pathname}${url.searchParams.get('v') || url.searchParams.get('bvid') || ''}`;
 
   function sample() {
     let immersive = false;
     const url = new URL(location.href);
     if (!visible() && awaitingReplacement && !observedPlayer && previousKey &&
-      previousKey === `${url.pathname}${url.searchParams.get('v') || ''}`) {
+      previousKey === pageKey(url)) {
       // Missing DOM during a hidden rebuild is not evidence of leaving the mode.
       return { type: 'edge-theme-watch-state', immersive: true, episode: `${pageToken}:${episode}` };
     }
-    if (url.hostname === 'www.bilibili.com' && url.pathname.startsWith('/video/')) {
+    if (url.hostname === 'www.bilibili.com') {
       immersive = document.querySelector('.bpx-player-container')?.getAttribute('data-screen') === 'web';
     }
     else if (url.hostname === 'live.bilibili.com' && /^\/(?:blanc\/)?\d+\/?$/.test(url.pathname)) {
@@ -33,7 +35,7 @@
       const watch = document.querySelector('ytd-watch-flexy');
       immersive = !!watch && !watch.hidden && watch.hasAttribute('theater');
     }
-    const contextKey = immersive ? `${url.pathname}${url.searchParams.get('v') || ''}` : '';
+    const contextKey = immersive ? pageKey(url) : '';
     if (contextKey && contextKey !== previousKey) episode += 1;
     previousKey = contextKey;
     return { type: 'edge-theme-watch-state', immersive, episode: `${pageToken}:${episode}` };
@@ -59,11 +61,14 @@
     if (disconnected) return;
     boundUrl = location.href;
     const url = new URL(boundUrl);
-    needsPlayer = url.hostname === 'www.bilibili.com' ||
-      (['www.youtube.com', 'youtube.com'].includes(url.hostname) &&
-       (url.pathname === '/watch' || url.pathname.startsWith('/live/')));
-    const player = !needsPlayer ? null : url.hostname === 'www.bilibili.com'
-      ? document.querySelector('.bpx-player-container') : document.querySelector('ytd-watch-flexy');
+    const bilibili = url.hostname === 'www.bilibili.com';
+    const youtube = ['www.youtube.com', 'youtube.com'].includes(url.hostname) &&
+      (url.pathname === '/watch' || url.pathname.startsWith('/live/'));
+    const biliPlayer = bilibili ? document.querySelector('.bpx-player-container') : null;
+    const biliMount = biliPlayer || (bilibili ? document.querySelector('#bilibili-player') : null);
+    needsPlayer = Boolean(biliMount) || (bilibili && awaitingReplacement) || youtube;
+    const player = bilibili ? biliPlayer : youtube ? document.querySelector('ytd-watch-flexy') : null;
+    discoveryRoot = bilibili ? (biliPlayer ? document.documentElement : biliMount || document.documentElement) : document.documentElement;
     if (observedPlayer && !observedPlayer.isConnected) awaitingReplacement = true;
     if (player !== observedPlayer) {
       observer.disconnect(); observedPlayer = player;
@@ -94,9 +99,9 @@
     treeObserver.disconnect(); structureObserver.disconnect();
     hiddenAncestors = [];
     if (disconnected) return;
-    if (visible()) {
+    if (visible() && needsPlayer) {
       awaitingReplacement = false;
-      treeObserver.observe(document.documentElement, { subtree: true, childList: true });
+      treeObserver.observe(discoveryRoot, { subtree: true, childList: true });
     }
     else if (needsPlayer && observedPlayer?.isConnected) {
       awaitingReplacement = false;

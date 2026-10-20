@@ -19,6 +19,7 @@ test('控制扩展仅对指定视频网站检测状态，并保留无弹窗 acti
   assert.deepEqual(manifest.permissions, ['management', 'storage', 'scripting']);
   assert.deepEqual(manifest.host_permissions, ['https://www.bilibili.com/*', 'https://live.bilibili.com/*', 'https://www.youtube.com/*', 'https://youtube.com/*']);
   assert.deepEqual(manifest.content_scripts[0].js, ['src/watch-state.js']);
+  assert.ok(manifest.content_scripts[0].matches.includes('https://www.bilibili.com/*'));
   assert.equal(manifest.content_scripts[0].run_at, 'document_idle');
   assert.equal(manifest.content_scripts[0].all_frames, undefined);
   assert.equal(manifest.content_scripts[0].matches.length, 4);
