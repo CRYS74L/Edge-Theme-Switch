@@ -24,7 +24,7 @@
 
 ## 下载与版本选择
 
-当前发行版为 **v1.1.1**。前往 [Release 下载页](https://github.com/CRYS74L/Edge-Theme-Switch/releases/latest)，在 Assets 中选择一个 ZIP：
+当前发行版为 **v1.1.2**。前往 [Release 下载页](https://github.com/CRYS74L/Edge-Theme-Switch/releases/latest)，在 Assets 中选择一个 ZIP：
 
 | 版本 | 适合谁 | 功能 |
 | --- | --- | --- |
@@ -57,7 +57,7 @@
 
 ### 设置主题保留策略
 
-已在 Edge 139 验证：处于停用状态的普通主题可能被浏览器自动移除。安装包提供一次性脚本，用于保留本扩展需要的深色主题；已经设置过的用户无需重复执行。
+部分 Edge 版本会在普通主题处于停用状态时自动移除它。安装包提供一次性脚本，用于保留本扩展需要的深色主题；已经设置过的用户无需重复执行。
 
 以管理员身份打开 PowerShell，先切换到解压目录，再执行脚本。下面的路径只是示例，请替换成你实际的解压位置：
 
@@ -91,7 +91,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\install-theme-pol
 
 ## 更新或更换版本
 
-从旧版升级到 v1.1.1 时，更新控制扩展后，还需将新包中的 `packages/theme-dark.crx` 拖入扩展页一次，将主题组件同步更新到 1.1.1。已设置的主题保留策略可以继续使用。
+当前 v1.1.2 只更新控制扩展；深色主题继续使用 1.1.1，不需要重新拖入 `packages/theme-dark.crx`。已设置的主题保留策略可以继续使用。
 
 - **更新控制扩展：** 用新包的 `packages/controller` 替换原目录中的对应文件，再到 `edge://extensions` 点击“重新加载”；如有新增权限提示，确认后生效。
 - **更新深色主题：** 仅在新版说明要求更新主题时，重新拖入新包中的 `packages/theme-dark.crx`。单独重新加载控制扩展不会更新已安装的主题。
