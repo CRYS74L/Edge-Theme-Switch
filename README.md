@@ -70,6 +70,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\install-theme-pol
 
 这会为本项目主题添加一项 Edge 策略，浏览器可能显示“由你的组织管理”。脚本遇到其他扩展策略时会停止并提示，不会覆盖它们；受单位策略管理的电脑应由管理员处理。
 
+### 可选：不使用管理策略
+
+Windows x64 的 Edge 139.0.3405.111 可试用[无策略主题保留方案](docs/POLICY_FREE_TRIAL.zh-CN.md)。该方案需要额外的本地 Python 辅助程序，并保留迁移前的完整恢复副本；原有按钮和自动切换逻辑继续使用。它只适用于已验证的 Edge 构建，属于独立的试验方案。
+
 ## 怎么使用
 
 **手动切换：** 点击太阳图标即可。图标悬停提示显示的是“点击后要切换到的模式”。

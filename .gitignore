@@ -18,3 +18,7 @@ Cached Theme.pak
 .idea/
 Thumbs.db
 Desktop.ini
+
+# Local Python verification caches
+__pycache__/
+*.pyc
