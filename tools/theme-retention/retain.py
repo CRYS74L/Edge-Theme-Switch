@@ -1,8 +1,9 @@
-"""Retain one ordinary theme in the verified Edge 139 build (Windows x64)."""
+"""Retain one ordinary theme in verified Edge builds (Windows x64)."""
 import argparse
 from contextlib import contextmanager
 import ctypes as c
 from ctypes import wintypes as w
+from dataclasses import dataclass
 from functools import lru_cache
 import hashlib
 import json
@@ -14,13 +15,38 @@ import sys
 import time
 import traceback
 
-BUILD = '139.0.3405.111'
-DLL_SHA256 = '3e9aa6cff358d7c6dd954b7a86b54ebe7c5ea08b63acecb373f88418d63687ba'
-FUNCTION_RVA, CALL_RVA, UNINSTALL_RVA = 0x3ECEFF0, 0x3ECF210, 0x6D5BCF0
-PREFIX = bytes.fromhex('4157415641554154565755534881ecb8000000')
-OUTDATED_RVA = 0x9FEE9C0
-OUTDATED_PREFIX = bytes.fromhex('41565657534883ec68')
+@dataclass(frozen=True)
+class EdgeBuild:
+    sha256: str
+    collector_rva: int
+    call_rva: int
+    uninstall_rva: int
+    collector_prefix: bytes
+    legacy_notification: tuple[int, bytes] | None = None
+
+
+BUILDS = {
+    '139.0.3405.111': EdgeBuild(
+        '3e9aa6cff358d7c6dd954b7a86b54ebe7c5ea08b63acecb373f88418d63687ba',
+        0x3ECEFF0, 0x3ECF210, 0x6D5BCF0,
+        bytes.fromhex('4157415641554154565755534881ecb8000000'),
+        (0x9FEE9C0, bytes.fromhex('41565657534883ec68')),
+    ),
+    '156.0.4314.84': EdgeBuild(
+        '165bf73ec52fde3e1127f982d89aef52c908b446c4dfae7881a5ea8cb5d7fa2f',
+        0x42AA007, 0x42AA03E, 0x7F6BA40,
+        bytes.fromhex('488b8c24c80000004831e1e8d9a14dff'),
+    ),
+    '157.0.4341.60': EdgeBuild(
+        'e4c51cda4e2bc9f3896f23b14bc35166941d6c4e799428c76d64a7d55163d09d',
+        0x42D197D, 0x42D19B4, 0x807F010,
+        bytes.fromhex('488b8c24c80000004831e1e8b3e34eff'),
+    ),
+}
+
 DEFAULT_CONFIG = Path(__file__).resolve().parents[2] / '.native-host' / 'retention.json'
+DEFAULT_EXE = Path(os.environ['ProgramFiles(x86)']) / 'Microsoft/Edge/Application/msedge.exe'
+DEFAULT_PROFILE = Path(os.environ['LOCALAPPDATA']) / 'Microsoft/Edge/User Data'
 k = c.WinDLL('kernel32', use_last_error=True)
 nt = c.WinDLL('ntdll')
 shell = c.WinDLL('shell32', use_last_error=True)
@@ -100,7 +126,13 @@ def handle(value):
 
 
 def entries(flag, pid, typ, first, next_fn):
-    with handle(snapshot(flag, pid)) as h:
+    # The loader may change its DLL list while Edge is starting.
+    for attempt in range(5):
+        candidate = snapshot(flag, pid)
+        if candidate != c.c_void_p(-1).value or c.get_last_error() != 24 or attempt == 4:
+            break
+        time.sleep(0.025)
+    with handle(candidate) as h:
         item = typ()
         item.size = c.sizeof(item)
         more = first(h, c.byref(item))
@@ -125,11 +157,11 @@ def command_line(h):
     return c.wstring_at(value.buffer, value.length // 2)
 
 
-def process_identity(h, profile):
+def process_identity(h, profile, executable=DEFAULT_EXE):
     text = c.create_unicode_buffer(32768)
     length = w.DWORD(len(text))
     require(image_name(h, 0, text, c.byref(length)))
-    expected = Path(os.environ['ProgramFiles(x86)']) / 'Microsoft/Edge/Application/msedge.exe'
+    expected = executable
     if Path(text.value).resolve() != expected.resolve():
         return None
     cmd = command_line(h)
@@ -143,7 +175,9 @@ def process_identity(h, profile):
     if any(x.startswith('--type=') for x in args):
         return None
     explicit = next((x.split('=', 1)[1] for x in args if x.startswith('--user-data-dir=')), None)
-    actual = Path(explicit) if explicit else Path(os.environ['LOCALAPPDATA']) / 'Microsoft/Edge/User Data'
+    if not explicit and expected != DEFAULT_EXE:
+        return None
+    actual = Path(explicit) if explicit else DEFAULT_PROFILE
     if actual.resolve() != profile.resolve():
         return None
     times = [w.FILETIME() for _ in range(4)]
@@ -202,8 +236,12 @@ def original_bytes(dll):
 @lru_cache(maxsize=2)
 def verified_binary(path, size, modified):
     dll = Path(path)
+    version = dll.parent.name
+    build = BUILDS.get(version)
+    if build is None:
+        raise RuntimeError(f'Unsupported Edge build {version}; no process memory was changed.')
     with dll.open('rb') as f:
-        if hashlib.file_digest(f, 'sha256').hexdigest() != DLL_SHA256:
+        if hashlib.file_digest(f, 'sha256').hexdigest() != build.sha256:
             raise RuntimeError('Unsupported Edge DLL hash; no process memory was changed.')
     with dll.open('rb') as f:
         f.seek(0x3c)
@@ -217,22 +255,19 @@ def verified_binary(path, size, modified):
         for _ in range(count):
             section = f.read(40)
             virtual_size, virtual, size, offset = struct.unpack_from('<IIII', section, 8)
-            if virtual <= FUNCTION_RVA < virtual + max(size, virtual_size):
-                raw = offset + FUNCTION_RVA - virtual
+            if virtual <= build.collector_rva < virtual + size:
+                raw = offset + build.collector_rva - virtual
         if raw is None:
             raise RuntimeError('Verified function is outside the image sections.')
         f.seek(raw)
         prefix = f.read(64)
-        if not prefix.startswith(PREFIX):
+        if not prefix.startswith(build.collector_prefix):
             raise RuntimeError('Unsupported theme collector signature.')
-        f.seek(raw + CALL_RVA - FUNCTION_RVA)
+        f.seek(raw + build.call_rva - build.collector_rva)
         call = f.read(5)
-        if call[0] != 0xe8 or CALL_RVA + 5 + struct.unpack_from('<i', call, 1)[0] != UNINSTALL_RVA:
+        if call[0] != 0xe8 or build.call_rva + 5 + struct.unpack_from('<i', call, 1)[0] != build.uninstall_rva:
             raise RuntimeError('Unsupported theme collector call site.')
-        f.seek(raw + OUTDATED_RVA - FUNCTION_RVA)
-        if f.read(len(OUTDATED_PREFIX)) != OUTDATED_PREFIX:
-            raise RuntimeError('Unsupported outdated-notification detector signature.')
-    return prefix, call
+    return build, prefix, call
 
 
 @contextmanager
@@ -264,9 +299,9 @@ def paused_threads(pid, address, extra_ranges=()):
             close(h)
 
 
-def patch(pid, profile, theme_id, allow_existing=False, suppress_outdated=False):
+def patch(pid, profile, theme_id, allow_existing=False, suppress_outdated=False, executable=DEFAULT_EXE):
     with handle(open_process(0x1438, False, pid)) as h:
-        identity = process_identity(h, profile)
+        identity = process_identity(h, profile, executable)
         if identity is None:
             return None
         exe, stamp = identity
@@ -278,17 +313,20 @@ def patch(pid, profile, theme_id, allow_existing=False, suppress_outdated=False)
         if module is None:
             return None
         dll = Path(module.path)
-        if dll.resolve() != (exe.parent / BUILD / 'msedge.dll').resolve():
-            raise RuntimeError('Unsupported Edge version; no process memory was changed.')
-        prefix, original = original_bytes(dll)
-        if read(h, module.base + FUNCTION_RVA, len(prefix)) != prefix:
+        if dll.resolve().parent not in (exe.parent.resolve(), (exe.parent / dll.parent.name).resolve()):
+            raise RuntimeError('The browser DLL is outside the selected Edge installation.')
+        build, prefix, original = original_bytes(dll)
+        if read(h, module.base + build.collector_rva, len(prefix)) != prefix:
             raise RuntimeError('Collector entry no longer matches the verified DLL.')
-        site = module.base + CALL_RVA
+        site = module.base + build.call_rva
         if read(h, site, 5) != original:
             raise RuntimeError('Collector call site was already changed; refusing to replace it.')
-        outdated_site = module.base + OUTDATED_RVA
-        if suppress_outdated and read(h, outdated_site, len(OUTDATED_PREFIX)) != OUTDATED_PREFIX:
-            raise RuntimeError('Outdated-notification detector was already changed.')
+        suppress_outdated = bool(suppress_outdated and build.legacy_notification)
+        if suppress_outdated:
+            rva, outdated_prefix = build.legacy_notification
+            outdated_site = module.base + rva
+            if read(h, outdated_site, len(outdated_prefix)) != outdated_prefix:
+                raise RuntimeError('Outdated-notification detector was already changed.')
         allocation = None
         call_written = False
         try:
@@ -302,13 +340,13 @@ def patch(pid, profile, theme_id, allow_existing=False, suppress_outdated=False)
                     break
             if not allocation:
                 raise RuntimeError('Cannot allocate a nearby theme retention stub.')
-            stub = build_stub(theme_id, module.base + UNINSTALL_RVA)
+            stub = build_stub(theme_id, module.base + build.uninstall_rva)
             write(h, allocation, stub)
             old = w.DWORD()
             require(protect(h, allocation, 4096, 0x20, c.byref(old)))
             require(flush(h, allocation, len(stub)))
             replacement = b'\xe8' + struct.pack('<i', allocation - site - 5)
-            extra = [(outdated_site, len(OUTDATED_PREFIX))] if suppress_outdated else []
+            extra = [(outdated_site, len(outdated_prefix))] if suppress_outdated else []
             with paused_threads(pid, site, extra):
                 if read(h, site, 5) != original:
                     raise RuntimeError('Collector changed during installation.')
@@ -335,7 +373,7 @@ def patch(pid, profile, theme_id, allow_existing=False, suppress_outdated=False)
                         detector_protection = w.DWORD()
                         require(protect(h, outdated_site, 1, 0x40, c.byref(detector_protection)))
                         try:
-                            write(h, outdated_site, OUTDATED_PREFIX[:1])
+                            write(h, outdated_site, outdated_prefix[:1])
                             require(flush(h, outdated_site, 1))
                         finally:
                             discarded = w.DWORD()
@@ -344,7 +382,7 @@ def patch(pid, profile, theme_id, allow_existing=False, suppress_outdated=False)
                 finally:
                     discarded = w.DWORD()
                     require(protect(h, site, 5, old.value, c.byref(discarded)))
-            return {'pid': pid, 'created': stamp, 'theme_id': theme_id, 'site': site,
+            return {'pid': pid, 'created': stamp, 'theme_id': theme_id, 'edge_build': dll.parent.name, 'site': site,
                     'allocation': allocation, 'patched_call': replacement.hex(),
                     'original_call': original.hex(), 'age_seconds': round(age, 3), 'verified': True,
                     'outdated_notification_suppressed': suppress_outdated}
@@ -373,11 +411,23 @@ def main():
     parser.add_argument('--config', type=Path, default=DEFAULT_CONFIG)
     parser.add_argument('--once', type=int)
     parser.add_argument('--stop', action='store_true')
+    parser.add_argument('--check-dll', type=Path)
+    parser.add_argument('--list-builds', action='store_true')
     args = parser.parse_args()
+    if args.list_builds:
+        print('\n'.join(BUILDS))
+        return
+    if args.check_dll:
+        original_bytes(args.check_dll)
+        print(args.check_dll.parent.name)
+        return
     config = json.loads(args.config.read_text('utf-8-sig'))
     profile = Path(config['profile'])
     theme = config['theme_id']
     state_dir = Path(config['state_dir'])
+    executable = Path(config.get('executable', DEFAULT_EXE)).resolve()
+    if executable != DEFAULT_EXE.resolve() and (not args.once or profile.resolve() == DEFAULT_PROFILE.resolve()):
+        raise ValueError('Alternate executable paths are for a one-time test of an isolated browser only.')
     suppress_outdated = config.get('suppress_outdated_notification', False)
     if not re.fullmatch('[a-p]{32}', theme):
         raise ValueError('Invalid theme ID in retention configuration.')
@@ -389,7 +439,8 @@ def main():
                 require(set_event(h))
         return
     if args.once:
-        result = patch(args.once, profile, theme, allow_existing=True, suppress_outdated=suppress_outdated)
+        result = patch(args.once, profile, theme, allow_existing=True,
+                       suppress_outdated=suppress_outdated, executable=executable)
         if result is None:
             raise RuntimeError('The supplied PID is not an eligible browser.')
         print(json.dumps(result))
@@ -397,9 +448,6 @@ def main():
     with handle(create_event(None, True, False, name)) as event:
         if c.get_last_error() == 183:
             return
-        # Verify the supported image before the user starts Edge; no disk hashing in the startup race.
-        dll = Path(os.environ['ProgramFiles(x86)']) / 'Microsoft/Edge/Application' / BUILD / 'msedge.dll'
-        original_bytes(dll)
         log(state_dir, {'event': 'watch-started', 'helper_pid': os.getpid()})
         done, failures = set(), {}
         while wait(event, 400) == 258:

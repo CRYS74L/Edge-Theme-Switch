@@ -10,6 +10,16 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const autoModules = ['service-worker.mjs', 'constants.mjs', 'action-presentation.mjs',
   'auto-mode.mjs', 'watch-context.mjs', 'watch-state.js'];
 const manualModules = ['manual-worker.mjs', 'constants.mjs', 'action-presentation.mjs'];
+const sharedFiles = [
+  'LICENSE',
+  'packages/theme-dark/manifest.json',
+  'packages/theme-dark/frame-dark.png',
+  'packages/theme-dark/titlebar-dark.png',
+  'packages/theme-dark/toolbar-gray.png',
+  'scripts/configure-theme-retention.ps1',
+  'scripts/install-theme-policy.ps1',
+  'tools/theme-retention/retain.py',
+];
 
 export async function buildReleasePackages({ outputRoot = path.join(root, '.artifacts/releases') } = {}) {
   const pkg = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
@@ -24,7 +34,6 @@ export async function buildReleasePackages({ outputRoot = path.join(root, '.arti
     const controller = path.join(directory, 'packages/controller');
     await mkdir(path.join(controller, 'src'), { recursive: true });
     await mkdir(path.join(controller, 'icons'));
-    await mkdir(path.join(directory, 'scripts'));
     const manifest = structuredClone(baseManifest);
     manifest.version_name = `${pkg.version}-${variant}`;
     if (variant === 'manual') {
@@ -45,9 +54,11 @@ export async function buildReleasePackages({ outputRoot = path.join(root, '.arti
         await copyFile(path.join(root, 'packages/controller/icons', file), path.join(controller, 'icons', file));
       }
     }
-    await copyFile(path.join(root, 'packages/theme-dark.crx'), path.join(directory, 'packages/theme-dark.crx'));
-    await copyFile(path.join(root, 'LICENSE'), path.join(directory, 'LICENSE'));
-    await copyFile(path.join(root, 'scripts/install-theme-policy.ps1'), path.join(directory, 'scripts/install-theme-policy.ps1'));
+    for (const file of sharedFiles) {
+      const destination = path.join(directory, file);
+      await mkdir(path.dirname(destination), { recursive: true });
+      await copyFile(path.join(root, file), destination);
+    }
     const label = variant === 'auto' ? '自动切换版：手动按钮 + B站／YouTube 当前标签自动切换。'
       : '纯手动版：仅太阳按钮切换，不申请网站访问权限，不包含页面检测脚本。';
     await writeFile(path.join(directory, '安装说明.md'), `# Edge 外观一键切换 ${pkg.version}\n\n${label}\n\n${instructions}`);

@@ -31,8 +31,16 @@ test('Release 自动和手动包具有独立入口、最小权限、同一主题
       assert.ok(manifest.content_scripts[0].js.includes('src/watch-state.js'));
       assert.ok(!modules.includes('manual-worker.mjs'));
     }
-    assert.deepEqual(await readFile(path.join(item.directory, 'packages/theme-dark.crx')),
-      await readFile(new URL('../packages/theme-dark.crx', import.meta.url)));
+    const theme = JSON.parse(await readFile(path.join(item.directory, 'packages/theme-dark/manifest.json'), 'utf8'));
+    const id = [...createHash('sha256').update(Buffer.from(theme.key, 'base64')).digest('hex').slice(0,32)]
+      .map(character => 'abcdefghijklmnop'[parseInt(character, 16)]).join('');
+    assert.equal(id, 'pijpfibjabpbkjfnodppeipagbhableg');
+    for (const name of new Set(Object.values(theme.theme.images))) {
+      assert.deepEqual(await readFile(path.join(item.directory, 'packages/theme-dark', name)),
+        await readFile(new URL('../packages/theme-dark/' + name, import.meta.url)));
+    }
+    assert.ok((await readFile(path.join(item.directory, 'scripts/configure-theme-retention.ps1'), 'utf8')).includes('Register-ScheduledTask'));
+    assert.ok((await readFile(path.join(item.directory, 'tools/theme-retention/retain.py'), 'utf8')).includes('157.0.4341.60'));
     assert.ok((await readFile(path.join(item.directory, '安装说明.md'), 'utf8')).includes('二选一'));
     assert.equal(await readFile(path.join(item.directory, 'LICENSE'), 'utf8'),
       await readFile(new URL('../LICENSE', import.meta.url), 'utf8'));

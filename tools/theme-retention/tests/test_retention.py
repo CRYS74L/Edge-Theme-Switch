@@ -38,9 +38,18 @@ class RetentionTests(unittest.TestCase):
 
     def test_unknown_binary_is_rejected_before_using_an_offset(self):
         with tempfile.TemporaryDirectory() as directory:
-            dll = Path(directory) / 'msedge.dll'
+            dll = Path(directory) / '157.0.4341.60' / 'msedge.dll'
+            dll.parent.mkdir()
             dll.write_bytes(b'not the supported Edge binary')
             with self.assertRaisesRegex(RuntimeError, 'Unsupported Edge DLL hash'):
+                retain.original_bytes(dll)
+
+    def test_future_build_is_rejected_even_if_its_dll_exists(self):
+        with tempfile.TemporaryDirectory() as directory:
+            dll = Path(directory) / '200.0.5000.0' / 'msedge.dll'
+            dll.parent.mkdir()
+            dll.write_bytes(b'not a reviewed Edge binary')
+            with self.assertRaisesRegex(RuntimeError, 'Unsupported Edge build 200'):
                 retain.original_bytes(dll)
 
     def test_invalid_identity_is_rejected(self):

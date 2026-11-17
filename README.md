@@ -22,57 +22,15 @@
 
 ![Edge 深色外观：深色顶栏、灰色工具栏、地址栏及垂直标签栏，网页保持原样](docs/images/edge-theme-switch-dark-header.png)
 
-## 下载与版本选择
+## 下载和安装
 
-当前发行版为 **v1.1.2**。前往 [Release 下载页](https://github.com/CRYS74L/Edge-Theme-Switch/releases/latest)，在 Assets 中选择一个 ZIP：
+**无策略试验版 v1.2.0-beta.2** 支持 Windows x64 的 Edge `139.0.3405.111`、`156.0.4314.84` 和 `157.0.4341.60`。它包括控制扩展、同一身份的深色主题，以及为这些构建保留主题的辅助程序。
 
-| 版本 | 适合谁 | 功能 |
-| --- | --- | --- |
-| 文件名以 `-auto.zip` 结尾 | 希望看视频时自动进入深色的用户 | 手动按钮 + B站／YouTube 自动切换 |
-| 文件名以 `-manual.zip` 结尾 | 只想自己点击切换的用户 | 仅手动按钮，不申请网站访问权限 |
+- 下载 [v1.2.0-beta.2 源码 ZIP](https://github.com/CRYS74L/Edge-Theme-Switch/archive/refs/tags/v1.2.0-beta.2.zip) 可直接安装自动版。
+- 有 Node.js 的用户可在仓库目录运行 `npm run release:build`，生成自动版和纯手动版 ZIP。包内包含安装说明。
+- 从旧版迁移、检查兼容版本或卸载，请参阅[安装和升级说明](docs/RELEASE_INSTALL.zh-CN.md)。
 
-两个版本**二选一**。请下载上述 ZIP；GitHub 自动生成的 `Source code` 是项目源码，不是准备好的使用包。
-
-## 解压后是什么
-
-这是通过 Edge 开发人员模式加载的扩展包，**没有安装程序，也不需要双击 EXE**。解压后主要用到：
-
-| 文件或文件夹 | 用途 |
-| --- | --- |
-| `安装说明.md` | 中文使用说明 |
-| `packages/controller` | 在 Edge 中加载的扩展文件夹 |
-| `packages/theme-dark.crx` | 需要拖入 Edge 安装的深色主题 |
-| `scripts/install-theme-policy.ps1` | 首次安装时设置主题保留策略 |
-
-将整个解压目录放在准备长期保留的位置。Edge 会直接读取其中的扩展文件，安装后不要删除或移动该目录。
-
-## 首次安装
-
-1. 在正在使用的 Edge 中打开 `edge://extensions`，开启“开发人员模式”。
-2. 点击“加载解压缩的扩展”，选择解压目录中的 **`packages/controller` 文件夹**。不要选择整个解压目录，也不要选择 `src`。
-3. 将 **`packages/theme-dark.crx`** 拖入同一个扩展页面，按提示安装深色主题。
-4. 自动版如有网站权限提示，允许访问 B站和 YouTube。
-5. 按下面的说明设置一次主题保留策略。
-6. 按文首图示将扩展固定到工具栏，再点击太阳图标，确认可以来回切换深浅外观。
-
-### 设置主题保留策略
-
-部分 Edge 版本会在普通主题处于停用状态时自动移除它。安装包提供一次性脚本，用于保留本扩展需要的深色主题；已经设置过的用户无需重复执行。
-
-以管理员身份打开 PowerShell，先切换到解压目录，再执行脚本。下面的路径只是示例，请替换成你实际的解压位置：
-
-```powershell
-Set-Location -LiteralPath 'D:\工具\Edge外观切换'
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\install-theme-policy.ps1"
-```
-
-然后打开 `edge://policy`，点击“重新加载策略”。如果没有立即生效，保存正在进行的工作后，自行重启 Edge 一次。
-
-这会为本项目主题添加一项 Edge 策略，浏览器可能显示“由你的组织管理”。脚本遇到其他扩展策略时会停止并提示，不会覆盖它们；受单位策略管理的电脑应由管理员处理。
-
-### 可选：不使用管理策略
-
-Windows x64 的 Edge 139.0.3405.111 可试用[无策略主题保留方案](docs/POLICY_FREE_TRIAL.zh-CN.md)。该方案需要额外的本地 Python 辅助程序，并保留迁移前的完整恢复副本；原有按钮和自动切换逻辑继续使用。它只适用于已验证的 Edge 构建，属于独立的试验方案。
+[v1.1.2 正式发行包](https://github.com/CRYS74L/Edge-Theme-Switch/releases/tag/v1.1.2) 使用早期的策略方案，该策略可能使 Edge 显示“由你的组织管理”。
 
 ## 怎么使用
 
@@ -95,11 +53,9 @@ Windows x64 的 Edge 139.0.3405.111 可试用[无策略主题保留方案](docs/
 
 ## 更新或更换版本
 
-当前 v1.1.2 只更新控制扩展；深色主题继续使用 1.1.1，不需要重新拖入 `packages/theme-dark.crx`。已设置的主题保留策略可以继续使用。
+原安装目录不变时，替换对应文件后在 `edge://extensions` 重新加载控制扩展。自动版和手动版使用同一个控制扩展身份。更换版本只需加载其中一版，深色主题可以沿用。
 
-- **更新控制扩展：** 用新包的 `packages/controller` 替换原目录中的对应文件，再到 `edge://extensions` 点击“重新加载”；如有新增权限提示，确认后生效。
-- **更新深色主题：** 仅在新版说明要求更新主题时，重新拖入新包中的 `packages/theme-dark.crx`。单独重新加载控制扩展不会更新已安装的主题。
-- **自动版与手动版互换：** 先移除旧控制扩展，再加载所选包的 `packages/controller`。两版使用同一扩展身份，不能同时安装；深色主题和已有保留策略无需重复安装。
+升级 Edge 时请对照[支持的构建和迁移步骤](docs/RELEASE_INSTALL.zh-CN.md)。辅助程序会跳过未经校验的构建，待该构建适配后再运行。
 
 ## 常见问题
 
@@ -109,7 +65,7 @@ Windows x64 的 Edge 139.0.3405.111 可试用[无策略主题保留方案](docs/
 
 **提示“主题组件未加载”怎么办？**
 
-检查是否已把 `packages/theme-dark.crx` 拖入扩展页安装。如果曾经可以使用、之后主题消失，请检查是否完成了主题保留策略设置。
+检查是否已通过扩展页面加载 `packages/theme-dark`。如果重新打开 Edge 后主题消失，在安装目录运行辅助程序的版本检查，并确认主题保留计划任务已启动。
 
 **自动版没有切换怎么办？**
 
@@ -125,15 +81,7 @@ Edge 需要重新应用整个浏览器主题，标签较多时可能有约半秒
 
 ## 卸载
 
-1. 在管理员 PowerShell 中切换到解压目录，撤销主题保留策略：
-
-   ```powershell
-   powershell -NoProfile -ExecutionPolicy Bypass -File ".\scripts\install-theme-policy.ps1" -Remove
-   ```
-
-2. 在 `edge://policy` 重新加载策略。
-3. 到 `edge://extensions` 移除“Edge 外观一键切换”，并在“设置 → 外观”中恢复默认主题。
-4. 不再使用后，即可删除解压目录。
+参阅[停用和卸载](docs/RELEASE_INSTALL.zh-CN.md#停用和卸载)。从管理策略版迁移的用户也可在同一说明中找到旧策略的撤销步骤。
 
 ## 隐私与许可
 

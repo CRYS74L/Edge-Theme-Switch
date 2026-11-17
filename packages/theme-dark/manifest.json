@@ -3,6 +3,7 @@
   "name": "Edge 外观一键切换 - 深色主题",
   "version": "1.1.1",
   "version_name": "1.1.1",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwiJvirlKWzbh40CGzk4K2TRN9rIdNzTOttWsffTLqpS+laS8BIiPvs4+VRXXJZNNvHDeHdbixHv+UcbDlFwoyZLK94z8cAszWYfWarnmo/5QRLsF/4UlcTrbKDZJCWtWRZUiEDVFclttb6hiEm/ZKruPhvxiaDmMAAgTr6/Nua2fjU5Xmok8tzudMe1CJsKcUz1AqNe8UFIvx49R1WPXLaUjmH2W6LZxXYwX2ZS9/k59X7/J2snERXTzbIQyBRtx7N083PCnc/tvgIn3Va7Q7HMX3z26KA1O2nlL3kFE+VXedDS9b46ePMGnNif4hl4k57D+sR0CsquMX3doXfmxCQIDAQAB",
   "update_url": "https://edge.microsoft.com/extensionwebstorebase/v1/crx",
   "description": "Edge 外观一键切换的深色主题组件。",
   "theme": {
