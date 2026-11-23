@@ -73,11 +73,19 @@ $start = New-ScheduledTaskAction -Execute $pythonw -Argument $arguments
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $sid
 $principal = New-ScheduledTaskPrincipal -UserId $sid -LogonType Interactive -RunLevel Limited
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
-    -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
-if ($null -ne $task) { Stop-RetentionTask }
-if ($null -eq $task -or $task.Actions[0].Execute -ne $pythonw) {
+    -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -StartWhenAvailable `
+    -RestartCount 3 -RestartInterval ([TimeSpan]::FromMinutes(1))
+if ($null -eq $task) {
     Register-ScheduledTask -TaskName $taskName -TaskPath '\' -Action $start -Trigger $trigger `
-        -Principal $principal -Settings $settings -Description 'Keeps the Edge Theme Switch local theme available.' -Force | Out-Null
+        -Principal $principal -Settings $settings -Description 'Keeps the Edge Theme Switch local theme available.' | Out-Null
+} else {
+    Stop-RetentionTask
+    try {
+        Set-ScheduledTask -TaskName $taskName -TaskPath '\' -Action $start -Settings $settings -ErrorAction Stop | Out-Null
+    } catch {
+        Start-ScheduledTask -TaskName $taskName -TaskPath '\'
+        throw
+    }
 }
-Start-ScheduledTask -TaskName $taskName -TaskPath '\'
-Write-Output 'Theme retention startup installed. Close and reopen Edge before checking the toolbar button.'
+Start-ScheduledTask -TaskName $taskName -TaskPath '\' -ErrorAction Stop
+Write-Output 'Theme retention started and will run at sign-in.'

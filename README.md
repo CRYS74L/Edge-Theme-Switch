@@ -24,9 +24,9 @@
 
 ## 下载和安装
 
-**无策略试验版 v1.2.0-beta.2** 支持 Windows x64 的 Edge `139.0.3405.111`、`156.0.4314.84` 和 `157.0.4341.60`。它包括控制扩展、同一身份的深色主题，以及为这些构建保留主题的辅助程序。
+**无策略试验版 v1.2.0-beta.3** 支持 Windows x64 的 Edge `139.0.3405.111`、`156.0.4314.84` 和 `157.0.4341.60`。它包括控制扩展、同一身份的深色主题，以及为这些构建保留主题的辅助程序。
 
-- 下载 [v1.2.0-beta.2 源码 ZIP](https://github.com/CRYS74L/Edge-Theme-Switch/archive/refs/tags/v1.2.0-beta.2.zip) 可直接安装自动版。
+- 下载 [v1.2.0-beta.3 源码 ZIP](https://github.com/CRYS74L/Edge-Theme-Switch/archive/refs/tags/v1.2.0-beta.3.zip) 可直接安装自动版。
 - 有 Node.js 的用户可在仓库目录运行 `npm run release:build`，生成自动版和纯手动版 ZIP。包内包含安装说明。
 - 从旧版迁移、检查兼容版本或卸载，请参阅[安装和升级说明](docs/RELEASE_INSTALL.zh-CN.md)。
 

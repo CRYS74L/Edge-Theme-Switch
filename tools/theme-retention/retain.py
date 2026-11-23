@@ -299,15 +299,13 @@ def paused_threads(pid, address, extra_ranges=()):
             close(h)
 
 
-def patch(pid, profile, theme_id, allow_existing=False, suppress_outdated=False, executable=DEFAULT_EXE):
+def patch(pid, profile, theme_id, suppress_outdated=False, executable=DEFAULT_EXE):
     with handle(open_process(0x1438, False, pid)) as h:
         identity = process_identity(h, profile, executable)
         if identity is None:
             return None
         exe, stamp = identity
         age = time.time() - (stamp / 10000000 - 11644473600)
-        if not allow_existing and age > 20:
-            raise RuntimeError('Browser was already running. Restart Edge before enabling retention.')
         module = next((x for x in entries(0x18, pid, ModuleEntry, k.Module32FirstW, k.Module32NextW)
                        if x.name.lower() == 'msedge.dll'), None)
         if module is None:
@@ -316,17 +314,38 @@ def patch(pid, profile, theme_id, allow_existing=False, suppress_outdated=False,
         if dll.resolve().parent not in (exe.parent.resolve(), (exe.parent / dll.parent.name).resolve()):
             raise RuntimeError('The browser DLL is outside the selected Edge installation.')
         build, prefix, original = original_bytes(dll)
-        if read(h, module.base + build.collector_rva, len(prefix)) != prefix:
-            raise RuntimeError('Collector entry no longer matches the verified DLL.')
         site = module.base + build.call_rva
-        if read(h, site, 5) != original:
-            raise RuntimeError('Collector call site was already changed; refusing to replace it.')
+        current_call = read(h, site, len(original))
+        collector_prefix = read(h, module.base + build.collector_rva, len(prefix))
+        offset = build.call_rva - build.collector_rva
+        # Some builds' verified prefix includes the one call we replace.
+        if offset < len(prefix):
+            collector_prefix = (collector_prefix[:offset] + original +
+                                collector_prefix[offset + len(original):])[:len(prefix)]
+        if collector_prefix != prefix:
+            raise RuntimeError('Collector entry no longer matches the verified DLL.')
         suppress_outdated = bool(suppress_outdated and build.legacy_notification)
         if suppress_outdated:
             rva, outdated_prefix = build.legacy_notification
             outdated_site = module.base + rva
-            if read(h, outdated_site, len(outdated_prefix)) != outdated_prefix:
-                raise RuntimeError('Outdated-notification detector was already changed.')
+            detector = read(h, outdated_site, len(outdated_prefix))
+
+        result = {'pid': pid, 'created': stamp, 'theme_id': theme_id, 'edge_build': dll.parent.name,
+                  'site': site, 'original_call': original.hex(), 'age_seconds': round(age, 3),
+                  'verified': True, 'outdated_notification_suppressed': suppress_outdated}
+        stub = build_stub(theme_id, module.base + build.uninstall_rva)
+        if current_call != original:
+            # A helper restart should recognize its own patch and leave it in place.
+            if current_call[0] != 0xe8:
+                raise RuntimeError('Collector call site was changed by another program.')
+            address = site + 5 + struct.unpack_from('<i', current_call, 1)[0]
+            if read(h, address, len(stub)) != stub:
+                raise RuntimeError('Collector call does not match this theme protection.')
+            if suppress_outdated and detector != b'\xc3' + outdated_prefix[1:]:
+                raise RuntimeError('Outdated-notification detector no longer matches this configuration.')
+            return {**result, 'allocation': address, 'patched_call': current_call.hex(), 'already_active': True}
+        if suppress_outdated and detector != outdated_prefix:
+            raise RuntimeError('Outdated-notification detector was already changed.')
         allocation = None
         call_written = False
         try:
@@ -340,7 +359,6 @@ def patch(pid, profile, theme_id, allow_existing=False, suppress_outdated=False,
                     break
             if not allocation:
                 raise RuntimeError('Cannot allocate a nearby theme retention stub.')
-            stub = build_stub(theme_id, module.base + build.uninstall_rva)
             write(h, allocation, stub)
             old = w.DWORD()
             require(protect(h, allocation, 4096, 0x20, c.byref(old)))
@@ -382,10 +400,7 @@ def patch(pid, profile, theme_id, allow_existing=False, suppress_outdated=False,
                 finally:
                     discarded = w.DWORD()
                     require(protect(h, site, 5, old.value, c.byref(discarded)))
-            return {'pid': pid, 'created': stamp, 'theme_id': theme_id, 'edge_build': dll.parent.name, 'site': site,
-                    'allocation': allocation, 'patched_call': replacement.hex(),
-                    'original_call': original.hex(), 'age_seconds': round(age, 3), 'verified': True,
-                    'outdated_notification_suppressed': suppress_outdated}
+            return {**result, 'allocation': allocation, 'patched_call': replacement.hex(), 'already_active': False}
         finally:
             if allocation and not call_written:
                 require(free(h, allocation, 0, 0x8000))
@@ -439,8 +454,7 @@ def main():
                 require(set_event(h))
         return
     if args.once:
-        result = patch(args.once, profile, theme, allow_existing=True,
-                       suppress_outdated=suppress_outdated, executable=executable)
+        result = patch(args.once, profile, theme, suppress_outdated=suppress_outdated, executable=executable)
         if result is None:
             raise RuntimeError('The supplied PID is not an eligible browser.')
         print(json.dumps(result))
