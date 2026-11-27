@@ -78,6 +78,7 @@ create_event = api(k, 'CreateEventW', w.HANDLE, c.c_void_p, w.BOOL, w.BOOL, w.LP
 open_event = api(k, 'OpenEventW', w.HANDLE, w.DWORD, w.BOOL, w.LPCWSTR)
 set_event = api(k, 'SetEvent', w.BOOL, w.HANDLE)
 wait = api(k, 'WaitForSingleObject', w.DWORD, w.HANDLE, w.DWORD)
+wait_multiple = api(k, 'WaitForMultipleObjects', w.DWORD, w.DWORD, c.POINTER(w.HANDLE), w.BOOL, w.DWORD)
 split_command = api(shell, 'CommandLineToArgvW', c.POINTER(w.LPWSTR), w.LPCWSTR, c.POINTER(c.c_int))
 local_free = api(k, 'LocalFree', c.c_void_p, c.c_void_p)
 
@@ -141,9 +142,13 @@ def entries(flag, pid, typ, first, next_fn):
             more = next_fn(h, c.byref(item))
 
 
+def edge_processes():
+    return {x.pid: x.parent for x in entries(2, 0, ProcessEntry, k.Process32FirstW, k.Process32NextW)
+            if x.name.lower() == 'msedge.exe'}
+
+
 def edge_pids():
-    return [x.pid for x in entries(2, 0, ProcessEntry, k.Process32FirstW, k.Process32NextW)
-            if x.name.lower() == 'msedge.exe']
+    return list(edge_processes())
 
 
 def command_line(h):
@@ -299,10 +304,12 @@ def paused_threads(pid, address, extra_ranges=()):
             close(h)
 
 
-def patch(pid, profile, theme_id, suppress_outdated=False, executable=DEFAULT_EXE):
+def patch(pid, profile, theme_id, suppress_outdated=False, executable=DEFAULT_EXE, *, ignored_pids=None):
     with handle(open_process(0x1438, False, pid)) as h:
         identity = process_identity(h, profile, executable)
         if identity is None:
+            if ignored_pids is not None:
+                ignored_pids.add(pid)
             return None
         exe, stamp = identity
         age = time.time() - (stamp / 10000000 - 11644473600)
@@ -421,6 +428,58 @@ def log(state_dir, event):
         f.write(json.dumps(event, ensure_ascii=False) + '\n')
 
 
+def wait_for_poll(event, protected_handles):
+    if not protected_handles or len(protected_handles) >= 64:
+        return wait(event, 400) == 258
+    handles = (w.HANDLE * (1 + len(protected_handles)))(event, *protected_handles.values())
+    # Wake at once for a clean close or restart. An open browser needs only a slow poll.
+    result = wait_multiple(len(handles), handles, False, 1500)
+    require(result != 0xffffffff)
+    return result != 0
+
+
+def watch_edge(event, profile, theme, state_dir, suppress_outdated):
+    previous = {}
+    done, ignored = set(), set()
+    failures, retry_at = {}, {}
+    protected_handles = {}
+    try:
+        while wait_for_poll(event, protected_handles):
+            live = edge_processes()
+            unchanged = {pid for pid, parent in live.items() if previous.get(pid) == parent}
+            previous = live
+            for pid, process in list(protected_handles.items()):
+                if pid not in unchanged or wait(process, 0) == 0:
+                    close(protected_handles.pop(pid))
+                    unchanged.discard(pid)
+            done.intersection_update(unchanged)
+            ignored.intersection_update(unchanged)
+            failures = {pid: message for pid, message in failures.items() if pid in unchanged}
+            retry_at = {pid: deadline for pid, deadline in retry_at.items() if pid in unchanged}
+
+            for pid in live.keys() - done - ignored:
+                if time.monotonic() < retry_at.get(pid, 0):
+                    continue
+                try:
+                    result = patch(pid, profile, theme, suppress_outdated=suppress_outdated, ignored_pids=ignored)
+                    if result:
+                        done.add(pid)
+                        if process := open_process(0x100000, False, pid):  # SYNCHRONIZE
+                            protected_handles[pid] = process
+                        log(state_dir, {'event': 'protected', **result})
+                except (OSError, RuntimeError) as error:
+                    message = str(error)
+                    if failures.get(pid) != message:
+                        failures[pid] = message
+                        log(state_dir, {'event': 'not-protected', 'pid': pid, 'error': message, 'details': traceback.format_exc()})
+                    if getattr(error, 'winerror', None) == 5:
+                        # Access denied can be temporary. Keep retrying, especially on a new browser.
+                        retry_at[pid] = time.monotonic() + (6 if live[pid] in done else 1.2)
+    finally:
+        for process in protected_handles.values():
+            close(process)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, default=DEFAULT_CONFIG)
@@ -463,22 +522,7 @@ def main():
         if c.get_last_error() == 183:
             return
         log(state_dir, {'event': 'watch-started', 'helper_pid': os.getpid()})
-        done, failures = set(), {}
-        while wait(event, 400) == 258:
-            live = set(edge_pids())
-            done.intersection_update(live)
-            failures = {pid: message for pid, message in failures.items() if pid in live}
-            for pid in live - done:
-                try:
-                    result = patch(pid, profile, theme, suppress_outdated=suppress_outdated)
-                    if result:
-                        done.add(pid)
-                        log(state_dir, {'event': 'protected', **result})
-                except (OSError, RuntimeError) as error:
-                    message = str(error)
-                    if failures.get(pid) != message:
-                        failures[pid] = message
-                        log(state_dir, {'event': 'not-protected', 'pid': pid, 'error': message, 'details': traceback.format_exc()})
+        watch_edge(event, profile, theme, state_dir, suppress_outdated)
         log(state_dir, {'event': 'watch-stopped'})
 
 
