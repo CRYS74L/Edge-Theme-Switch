@@ -4,12 +4,61 @@ import struct
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import retain
 
 
 class RetentionTests(unittest.TestCase):
+    def test_watch_retries_access_denied_and_checks_new_processes_without_slowing_down(self):
+        snapshots = [{10: 1, 11: 10}, {10: 1, 11: 10}, {10: 1, 11: 10},
+                     {10: 1, 11: 10}, {10: 1, 11: 2}]
+        attempts = []
+        ticks = iter([0, 2, 4, 6, 8])
+        elapsed = 0
+
+        def wait_for_poll(_event, interval):
+            nonlocal elapsed
+            self.assertEqual(interval, 400)
+            next_tick = next(ticks, None)
+            if next_tick is None:
+                return 0
+            elapsed = next_tick
+            return 258
+
+        def attach(pid, *_args, ignored_pids, **_kwargs):
+            attempts.append(pid)
+            if pid == 10 and attempts.count(10) < 4:
+                raise c.WinError(5)
+            if pid == 11 and attempts.count(11) == 1:
+                ignored_pids.add(pid)
+                return None
+            return {'pid': pid}
+
+        with (patch.object(retain, 'wait', side_effect=wait_for_poll),
+              patch.object(retain, 'edge_processes', side_effect=snapshots),
+              patch.object(retain.time, 'monotonic', side_effect=lambda: elapsed),
+              patch.object(retain, 'patch', side_effect=attach),
+              patch.object(retain, 'open_process', return_value=None),
+              patch.object(retain, 'log') as record):
+            retain.watch_edge(None, None, 'a' * 32, None, False)
+        self.assertEqual(attempts.count(10), 4)
+        self.assertEqual(attempts.count(11), 2)
+        self.assertEqual(
+            [call.args[1]['pid'] for call in record.call_args_list if call.args[1]['event'] == 'protected'],
+            [10, 11],
+        )
+
+    def test_stable_watch_wakes_on_browser_exit_and_stops_on_its_stop_event(self):
+        with patch.object(retain, 'wait_multiple', side_effect=[1, 258, 0]) as wait_for_either:
+            handles = {42: 9}
+            self.assertTrue(retain.wait_for_poll(3, handles))
+            self.assertTrue(retain.wait_for_poll(3, handles))
+            self.assertFalse(retain.wait_for_poll(3, handles))
+            count, waited_handles, wait_all, timeout = wait_for_either.call_args.args
+            self.assertEqual((count, list(waited_handles), wait_all, timeout), (2, [3, 9], False, 1500))
+
     def test_only_the_selected_long_string_skips_the_original_call(self):
         selected = 'abcdefghijklmnopabcdefghijklmnop'
         original = c.CFUNCTYPE(c.c_int, c.c_void_p, c.c_void_p)(lambda _owner, _id: 77)
