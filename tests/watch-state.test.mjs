@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import test from 'node:test';
 import { activeWatchContext, isWatchSite } from '../packages/controller/src/watch-context.mjs';
 const source = await readFile(new URL('../packages/controller/src/watch-state.js', import.meta.url), 'utf8');
-function page(url, { visibility = 'visible', biliPlayerPresent = true, biliMountPresent = false } = {}) {
+function page(url, { visibility = 'visible', biliPlayerPresent = true, biliMountPresent = false, sendMessage } = {}) {
   const queryListeners = []; const reports = [];
   const observers=[];const microtasks=[];const listeners=new Map();
   const body = { screen: 'normal', theater: false, hidden: false, visibility };
@@ -27,7 +27,10 @@ function page(url, { visibility = 'visible', biliPlayerPresent = true, biliMount
       return null;
     } },
     chrome: { runtime: { onMessage: { addListener(fn) { queryListeners.push(fn); } },
-      async sendMessage(value) { reports.push(value); return { ok: true }; } } } };
+      async sendMessage(value) {
+        if (sendMessage) await sendMessage(value);
+        reports.push(value); return { ok: true };
+      } } } };
   vm.runInNewContext(source, context);
   return { body, location, reports, observers, microtasks, get biliPlayer(){return biliPlayer;}, biliMount, ytPlayer, listeners,
     replaceBili(){biliPlayer.isConnected=false;biliPlayer={isConnected:true,parentElement:playerParent,getAttribute:()=>body.screen};},
@@ -37,6 +40,37 @@ function page(url, { visibility = 'visible', biliPlayerPresent = true, biliMount
     flush(){while(microtasks.length)microtasks.shift()();},
     read() { let value; queryListeners[0]({type:'edge-theme-watch-query'}, {}, v => { value = v; }); return value; } };
 }
+test('页面消息暂时发不出去时，仍可在下一次播放器变化恢复自动检测', async () => {
+  let failOnce = true;
+  const p = page('https://www.bilibili.com/video/BVfake/', {
+    async sendMessage() {
+      if (failOnce) {
+        failOnce = false;
+        throw Error('Could not establish connection. Receiving end does not exist.');
+      }
+    },
+  });
+  p.flush();
+  await new Promise(setImmediate);
+  assert.equal(p.observers[0].connected, true);
+  p.body.screen = 'web';
+  p.observers[0].callback();
+  p.flush();
+  await new Promise(setImmediate);
+  assert.equal(p.reports.at(-1)?.immersive, true);
+});
+
+test('扩展重载使旧页面连接失效时，旧页面不再假装可用', async () => {
+  const p = page('https://www.youtube.com/watch?v=fixture', {
+    async sendMessage() { throw Error('Extension context invalidated.'); },
+  });
+  p.flush();
+  await new Promise(setImmediate);
+  assert.equal(p.observers.every(observer => !observer.connected), true);
+  assert.equal(p.listeners.has('focus'), false);
+  assert.equal(p.read(), undefined);
+});
+
 test('播放器属性变化在下一微任务报告，不等定时器；同轮变化只报告最终状态',()=>{
   const p=page('https://www.bilibili.com/video/BVfake/');p.flush();p.reports.length=0;
   assert.equal(p.observers[0].target,p.biliPlayer);
@@ -223,7 +257,7 @@ test('前台上下文查询指定窗口及主框架，不接受相似恶意域�
   assert.deepEqual(await activeWatchContext(api), {tabId:9,immersive:true,episode:'a:1'});
   assert.deepEqual(asked,{id:9,options:{frameId:0}});
   api.tabs.sendMessage = async () => { throw Error('tab closed'); };
-  assert.equal(await activeWatchContext(api), null);
+  assert.deepEqual(await activeWatchContext(api), { ignored: true });
 });
 
 test('旧页重载后没有接收者时只为当前页补注入脚本', async () => {
@@ -235,5 +269,10 @@ test('旧页重载后没有接收者时只为当前页补注入脚本', async ()
   assert.equal((await activeWatchContext(api)).immersive,true);
   assert.deepEqual(injected,[{target:{tabId:2},files:['src/watch-state.js']}]);
   ready=false;api.tabs.query=async()=>[{id:2,url:'https://www.bilibili.com/video/BVfake/',discarded:true}];
-  assert.equal(await activeWatchContext(api),null);assert.equal(injected.length,1);
+  assert.deepEqual(await activeWatchContext(api), { ignored: true });assert.equal(injected.length,1);
+  api.tabs.query = async () => [{ id: 2, url: 'https://www.bilibili.com/video/BVfake/', status: 'complete' }];
+  api.tabs.sendMessage = async () => ready
+    ? { type: 'edge-theme-watch-state', immersive: true, episode: 'rebound:2' } : undefined;
+  assert.equal((await activeWatchContext(api)).episode, 'rebound:2');
+  assert.equal(injected.length, 2);
 });

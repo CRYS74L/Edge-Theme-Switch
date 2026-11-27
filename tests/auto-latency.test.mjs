@@ -79,6 +79,61 @@ test('连续切标签以执行时的当前标签为准，诊断慢也不阻塞�
   } finally {h.releaseDiagnostics();await turn();globalThis.chrome=old;}
 });
 
+test('普通标签上的手动切换不等待旧视频页的状态查询', async () => {
+  const old = globalThis.chrome;
+  const h = createLatencyChrome();
+  globalThis.chrome = h.api;
+  let finishVideoQuery;
+  try {
+    await import(`../packages/controller/src/service-worker.mjs?manualOrdinary=${Date.now()}`);
+    await turn();
+    h.api.tabs.sendMessage = () => new Promise(resolve => { finishVideoQuery = resolve; });
+    h.api.tabs.onActivated.emit({ tabId: 1 });
+    await turn();
+    assert.equal(typeof finishVideoQuery, 'function');
+    h.activeId = 2;
+    h.trace.length = 0;
+    const click = h.api.action.onClicked.emit({ id: 2, url: 'https://example.invalid/' });
+    await turn();
+    assert.equal(h.enabled, true);
+    assert.equal(h.trace.includes('window') || h.trace.includes('activeTab'), false);
+    finishVideoQuery({ type: 'edge-theme-watch-state', immersive: true, episode: 'old:1' });
+    await Promise.all(click);
+    assert.equal(h.trace.filter(item => item === 'themeApply').length, 1);
+  } finally {
+    finishVideoQuery?.();
+    await turn();
+    globalThis.chrome = old;
+  }
+});
+
+test('视频页暂时无法上报时不误切浅色，确认退出观看后才恢复', async () => {
+  const old = globalThis.chrome;
+  const h = createLatencyChrome();
+  globalThis.chrome = h.api;
+  try {
+    await import(`../packages/controller/src/service-worker.mjs?unconfirmedPlayer=${Date.now()}`);
+    await turn();
+    h.immersive = true;
+    h.api.tabs.onActivated.emit({ tabId: 1 });
+    await turn();
+    assert.equal(h.enabled, true);
+    const query = h.api.tabs.sendMessage;
+    h.api.tabs.sendMessage = async () => undefined;
+    h.api.tabs.onUpdated.emit(1, { status: 'complete' }, { id: 1, active: true });
+    await turn();
+    assert.equal(h.enabled, true);
+    h.api.tabs.sendMessage = query;
+    h.immersive = false;
+    h.api.tabs.onUpdated.emit(1, { status: 'complete' }, { id: 1, active: true });
+    await turn();
+    assert.equal(h.enabled, false);
+  } finally {
+    await turn();
+    globalThis.chrome = old;
+  }
+});
+
 test('图标更新停滞时，退出观看和手动切换仍立即进入主题操作队列', async()=>{
   const old=globalThis.chrome;const h=createLatencyChrome();globalThis.chrome=h.api;
   let releaseIcon;let hold=true;let appliedIcon;const icons=[];

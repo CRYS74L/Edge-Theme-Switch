@@ -235,9 +235,15 @@ async function setDarkThemeEnabled(theme, enabled) {
   return { ...theme, ...current };
 }
 
-async function performToggle() {
+async function performToggle(context, requestedAt) {
+  const started = performance.now();
   try {
-    await autoMode.manual();
+    await autoMode.manual(context);
+    diagnose({ manualLatency: {
+      controllerVersion: chrome.runtime.getManifest().version,
+      queueMs: started - requestedAt, ...lastThemeDetails,
+      workerMs: performance.now() - started, checkedAt: Date.now(),
+    } });
   }
   catch (error) {
     console.error('Edge 外观一键切换失败。', error);
@@ -302,21 +308,15 @@ function requestReconcile(tabId, sentAt) {
   });
 }
 
-async function attachExistingPages() {
-  if (!chrome.scripting || !chrome.tabs) return;
-  const tabs = await chrome.tabs.query({ active: true, lastFocusedWindow: true,
-    url: chrome.runtime.getManifest().host_permissions });
-  await Promise.allSettled(tabs.filter(tab => isWatchSite(tab.url)).map(tab =>
-    chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/watch-state.js'] })));
-}
-
+// Foreground discovery also attaches the observer if the current page needs it.
 chrome.runtime?.onStartup?.addListener(() => enqueueWithPresentation(() => reconcile()));
-chrome.runtime?.onInstalled?.addListener(() => enqueueWithPresentation(async () => {
-  // Never let an old/discarded background page hold the appearance queue open.
-  void attachExistingPages().catch(error => console.error('页面状态检测加载失败。', error));
-  await reconcile();
-}));
-chrome.action.onClicked.addListener(() => enqueueWithPresentation(performToggle));
+chrome.runtime?.onInstalled?.addListener(() => enqueueWithPresentation(() => reconcile()));
+chrome.action.onClicked.addListener(tab => {
+  const requestedAt = performance.now();
+  const ordinaryPage = tab && !isWatchSite(tab.url);
+  if (ordinaryPage) invalidateContext();
+  return enqueueWithPresentation(() => performToggle(ordinaryPage ? null : undefined, requestedAt));
+});
 chrome.runtime?.onMessage?.addListener((message, sender, respond) => {
   if (message?.type !== 'edge-theme-watch-state' || sender.frameId !== 0 ||
     !sender.tab || !isWatchSite(sender.url)) return;

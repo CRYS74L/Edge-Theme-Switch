@@ -14,6 +14,11 @@ function hasNoLastFocusedWindow(error) {
   return /\bno last-focused window\b/i.test(String(error?.message || error));
 }
 
+function isWatchReport(report) {
+  return report?.type === 'edge-theme-watch-state' && typeof report.immersive === 'boolean' &&
+    typeof report.episode === 'string' && report.episode.length <= 128;
+}
+
 export async function activeWatchContext(api, expectedTabIds, options = {}) {
   if (!api.tabs || !api.windows) return null;
   const started = performance.now();
@@ -62,26 +67,29 @@ export async function activeWatchContext(api, expectedTabIds, options = {}) {
   const query = () => api.tabs.sendMessage(tab.id, { type: 'edge-theme-watch-query' }, { frameId: 0 });
   try {
     let report;
+    const canAttach = api.scripting && !tab.discarded && tab.status !== 'loading';
     try { report = await query(); }
     catch (error) {
-      if (options.isCurrent?.() === false) return { ignored: true };
-      if (!api.scripting || tab.discarded || tab.status === 'loading') throw error;
+      if (!canAttach) throw error;
+    }
+    if (options.isCurrent?.() === false) return { ignored: true };
+    if (!isWatchReport(report) && canAttach) {
       await api.scripting.executeScript({ target: { tabId: tab.id }, files: ['src/watch-state.js'] });
       if (options.isCurrent?.() === false) return { ignored: true };
       report = await query();
     }
     timings.playerMs = performance.now() - playerStarted;
     if (options.isCurrent?.() === false) return { ignored: true };
-    if (report?.type !== 'edge-theme-watch-state' || typeof report.immersive !== 'boolean' ||
-      typeof report.episode !== 'string' || report.episode.length > 128) return null;
+    if (!isWatchReport(report)) return { ignored: true };
     return { tabId: tab.id, immersive: report.immersive, episode: report.episode };
   }
   catch (error) {
     if (options.isCurrent?.() === false) return { ignored: true };
     // Diagnostics must never hold the appearance decision behind disk writes.
     void api.storage?.local?.set({ watchContextError: String(error?.message || error) })?.catch(() => {});
-    return null;
-  } // Closed, navigating, discarded or not yet granted site access.
+    // A supported page without a response has not confirmed that viewing mode ended.
+    return { ignored: true };
+  }
   }
   finally { options.trace?.(timings); }
 }

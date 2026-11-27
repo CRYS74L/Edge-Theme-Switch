@@ -18,8 +18,8 @@ export function createAutoMode(io) {
     if (changed) await save();
   }
   const key = context => context?.immersive ? `${context.tabId}:${context.episode}` : null;
-  async function suppressCurrent() {
-    const context = await io.context();
+  async function suppressCurrent(providedContext) {
+    const context = providedContext === undefined ? await io.context() : providedContext;
     if (key(context)) state.suppressed[context.tabId] = context.episode;
     state.owned = false;
     await save();
@@ -50,10 +50,10 @@ export function createAutoMode(io) {
       }
       return { theme, changed: false };
     },
-    async manual() {
+    async manual(context) {
       await load();
       const theme = await io.theme();
-      await suppressCurrent();
+      await suppressCurrent(context);
       await io.setTheme(theme, !theme.enabled);
     },
     async externalChange() { await load(); await suppressCurrent(); },

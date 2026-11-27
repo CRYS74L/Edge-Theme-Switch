@@ -48,10 +48,18 @@
     const serialized = JSON.stringify(state);
     if (serialized === previousReport) return;
     previousReport = serialized;
+    const onFailure = error => {
+      if (/extension context invalidated/i.test(String(error?.message || error))) {
+        dispose();
+      } else if (previousReport === serialized) {
+        // A disconnected worker can be woken by the next player or focus event.
+        previousReport = '';
+      }
+    };
     try {
-      chrome.runtime.sendMessage({ ...state, sentAt: Date.now() }).catch(disconnect);
+      chrome.runtime.sendMessage({ ...state, sentAt: Date.now() }).catch(onFailure);
     }
-    catch { disconnect(); }
+    catch (error) { onFailure(error); }
   }
   function schedule() {
     if (!scheduled && !disconnected) { scheduled = true; queueMicrotask(report); }
@@ -131,20 +139,21 @@
   window.addEventListener('focus', onFocus);
   document.addEventListener('visibilitychange', onVisibility);
   const onQuery = (message, sender, respond) => {
-    if (message?.type === 'edge-theme-watch-query') respond(sample());
+    if (!disconnected && message?.type === 'edge-theme-watch-query') respond(sample());
   };
   chrome.runtime.onMessage.addListener(onQuery);
   const events = ['pageshow', 'popstate', 'hashchange', 'yt-navigate-finish', 'fullscreenchange'];
   for (const name of events) {
     window.addEventListener(name, bindPlayer);
   }
-  globalThis.__edgeThemeWatchObserver = { dispose() {
+  function dispose() {
     disconnect();
     document.removeEventListener('visibilitychange', onVisibility);
     window.removeEventListener('focus', onFocus);
     try { chrome.runtime.onMessage.removeListener(onQuery); } catch {}
     for (const name of events) window.removeEventListener(name, bindPlayer);
-  } };
+  }
+  globalThis.__edgeThemeWatchObserver = { dispose };
   onVisibility();
   if (!visible()) bindPlayer();
   report();
